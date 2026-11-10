@@ -119,7 +119,10 @@ else
   msg "Container $CTID already has /ha-config."
 fi
 
-if [[ $added -eq 1 ]] && pct status "$CTID" 2>/dev/null | grep -q running; then
+if ! pct status "$CTID" 2>/dev/null | grep -q running; then
+  msg "Starting container $CTID …"
+  pct start "$CTID" >/dev/null
+elif [[ $added -eq 1 ]]; then
   msg "Restarting container $CTID so it sees the new mount …"
   pct reboot "$CTID" >/dev/null
 fi
