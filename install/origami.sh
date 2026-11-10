@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Origami-LXC – installs the Origami setup appliance as a Proxmox LXC.
 # Usage: bash install/origami.sh [options]
-set -euo pipefail
+set -Eeuo pipefail
 
 REPO="${ORIGAMI_LXC_REPO:-HatchetMan111/Origami-HA-Dashboard}"
 REF="${ORIGAMI_LXC_REF:-main}"
@@ -23,6 +23,8 @@ ASSUME_YES=0
 NODE_MAJOR=22
 
 C_G=$'\033[32m'; C_Y=$'\033[33m'; C_R=$'\033[31m'; C_B=$'\033[1m'; C_0=$'\033[0m'
+
+trap 'printf "%s\n" "${C_R}xx ${C_0}Unerwarteter Fehler (Exit $?) in Zeile $LINENO: $BASH_COMMAND" >&2' ERR
 
 msg()  { printf '%s\n' "${C_G}==>${C_0} ${C_B}$*${C_0}"; }
 warn() { printf '%s\n' "${C_Y}!! ${C_0}$*"; }
@@ -70,31 +72,48 @@ next_id() {
 
 pick_storage() {
   if [[ -n $STORAGE ]]; then printf '%s' "$STORAGE"; return; fi
-  if pvesm status --content rootdir 2>/dev/null | awk '$1 == "local-lvm" {found=1} END {exit !found}'; then
-    printf 'local-lvm'
-  elif pvesm status --content rootdir 2>/dev/null | awk '$1 == "local" {found=1} END {exit !found}'; then
-    printf 'local'
-  else
-    pvesm status --content rootdir 2>/dev/null | awk 'NR == 2 {print $1}'
+
+  local list
+  list=$(pvesm status --content rootdir 2>/dev/null | awk 'NR > 1 && $1 != "Name" {print $1}' || true)
+  if [[ -z $list ]]; then
+    # Fall back to any storage that is not the template/ISO storage.
+    list=$(pvesm status 2>/dev/null | awk 'NR > 1 {print $1}' | grep -vx 'local' || true)
   fi
+  if [[ -z $list ]]; then
+    list=$(pvesm status 2>/dev/null | awk 'NR > 1 {print $1}' || true)
+  fi
+
+  local name
+  for name in local-lvm local-zfs local; do
+    if grep -qx "$name" <<<"$list"; then printf '%s' "$name"; return; fi
+  done
+  printf '%s' "$(printf '%s\n' "$list" | sed '/^$/d' | head -1)"
 }
 
 pick_template_storage() {
   if [[ -n ${TEMPLATE_STORAGE:-} ]]; then printf '%s' "$TEMPLATE_STORAGE"; return; fi
-  if pvesm status --content vztmpl 2>/dev/null | awk '$1 == "local" {found=1} END {exit !found}'; then
-    printf 'local'
-  else
-    pvesm status --content vztmpl 2>/dev/null | awk 'NR == 2 {print $1}'
+
+  local list
+  list=$(pvesm status --content vztmpl 2>/dev/null | awk 'NR > 1 && $1 != "Name" {print $1}' || true)
+  if [[ -z $list ]]; then
+    list=$(pvesm status 2>/dev/null | awk 'NR > 1 {print $1}' || true)
   fi
+
+  if grep -qx 'local' <<<"$list"; then printf 'local'; return; fi
+  printf '%s' "$(printf '%s\n' "$list" | sed '/^$/d' | head -1)"
 }
 
 ensure_template() {
   local storage=$1
-  [[ -n $storage ]] || die "No storage for LXC templates found. Check Datacenter → Storage → Content."
+  [[ -n $storage ]] || die "Kein Storage für LXC-Templates gefunden. Prüfe Datacenter → Storage → Content (vztmpl)."
+  if ! pveam list "$storage" >/dev/null 2>&1; then
+    die "Storage '$storage' unterstützt keine LXC-Templates oder ist nicht erreichbar. Nutze --template-storage <name>."
+  fi
+
   local template
-  template=$(pveam list "$storage" 2>/dev/null | awk '/debian-13-standard/ {print $1; exit}')
+  template=$(pveam list "$storage" 2>/dev/null | awk '/debian-13-standard/ {print $1; exit}' || true)
   [[ -n $template ]] && { printf '%s' "$template"; return; }
-  template=$(pveam list "$storage" 2>/dev/null | awk '/debian-12-standard/ {print $1; exit}')
+  template=$(pveam list "$storage" 2>/dev/null | awk '/debian-12-standard/ {print $1; exit}' || true)
   [[ -n $template ]] && { printf '%s' "$template"; return; }
 
   if [[ $DRY_RUN -eq 1 ]]; then
@@ -105,11 +124,11 @@ ensure_template() {
   warn "No Debian template found, downloading one …"
   pveam update >/dev/null
   local name
-  name=$(pveam available --section system 2>/dev/null | awk '/debian-13-standard/ {print $NF; exit}')
-  [[ -z $name ]] && name=$(pveam available --section system 2>/dev/null | awk '/debian-12-standard/ {print $NF; exit}')
+  name=$(pveam available --section system 2>/dev/null | awk '/debian-13-standard/ {print $NF; exit}' || true)
+  [[ -z $name ]] && name=$(pveam available --section system 2>/dev/null | awk '/debian-12-standard/ {print $NF; exit}' || true)
   [[ -n $name ]] || die "No Debian template available. Run 'pveam update' and try again."
   pveam download "$storage" "$name" >/dev/null
-  template=$(pveam list "$storage" 2>/dev/null | awk -v n="$name" '$1 ~ n"$" {print $1; exit}')
+  template=$(pveam list "$storage" 2>/dev/null | awk -v n="$name" '$1 ~ n"$" {print $1; exit}' || true)
   [[ -n $template ]] || die "Template $name was downloaded but not found in $storage."
   printf '%s' "$template"
 }
@@ -266,6 +285,9 @@ fi
 
 STORAGE=$(pick_storage)
 TEMPLATE_STORAGE=$(pick_template_storage)
+[[ -n $STORAGE ]] || die "Kein Storage für Container-Disks gefunden. Nutze --storage <name>."
+[[ -n $TEMPLATE_STORAGE ]] || die "Kein Storage für LXC-Templates gefunden. Nutze --template-storage <name>."
+msg "Storage: Container=${STORAGE}, Templates=${TEMPLATE_STORAGE}"
 TMPL=$(ensure_template "$TEMPLATE_STORAGE")
 [[ -n $TMPL ]] || die "No template found."
 
