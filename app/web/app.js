@@ -86,11 +86,16 @@ function accessBanner() {
   if (access.writable && access.valid) {
     return `<div class="banner ok"><strong>Schreibzugriff auf /config</strong>Theme, Fonts, Module und Plugins werden direkt installiert.</div>`;
   }
+  const detail = access.message ? `<div class="mt small">${esc(access.message)}</div>` : "";
+  const action = access.exists
+    ? `<div class="mt small">Der Ordner ist eingebunden, aber nicht beschreibbar oder keine HA-Konfiguration.</div>`
+    : `<div class="mt small">Binde den Ordner auf dem Proxmox-Host ein:</div>
+       <div class="mt"><code class="inline">bash install/ha-mount.sh --ctid &lt;CTID&gt; --smb '//&lt;HA-IP&gt;/config' --user &lt;user&gt; --pass '&lt;pass&gt;'</code></div>
+       <div class="mt small">HAOS: „Samba share“-Add-on aktivieren.</div>`;
   return `<div class="banner warn">
     <strong>Kein Schreibzugriff auf Home Assistants /config</strong>
-    Ohne diesen Zugriff lassen sich Theme, Fonts und Plugins nicht installieren. Binde den Ordner auf dem Proxmox-Host ein:
-    <div class="mt"><code class="inline">bash install/ha-mount.sh --ctid &lt;CTID&gt; --smb '//&lt;HA-IP&gt;/config' --user &lt;user&gt; --pass '&lt;pass&gt;'</code></div>
-    <div class="mt small">HAOS: „Samba share“-Add-on aktivieren. Danach hier <b>Zugriff prüfen</b>.</div>
+    Ohne diesen Zugriff lassen sich Theme, Fonts und Plugins nicht installieren.
+    ${detail}${action}
     <div class="row mt"><button class="small" data-action="recheck">Zugriff prüfen</button></div>
   </div>`;
 }

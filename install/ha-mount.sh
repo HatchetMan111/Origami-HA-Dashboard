@@ -69,7 +69,7 @@ if [[ -n $SMB ]]; then
     printf 'username=%s\npassword=%s\n' "$USER" "${PASS:-}" > "$cred"
     chmod 600 "$cred"
     msg "Mounting $SMB …"
-    mount -t cifs "$SMB" "$MOUNTPOINT" -o "credentials=$cred,uid=0,gid=0,vers=3.0,iocharset=utf8,noperm,dir_mode=0777,file_mode=0666"
+    mount -t cifs "$SMB" "$MOUNTPOINT" -o "credentials=$cred,uid=0,gid=0,rw,vers=3.0,iocharset=utf8,noperm,dir_mode=0777,file_mode=0666"
     rm -f "$cred"
   fi
 elif [[ -n $PATH_SRC ]]; then
@@ -89,6 +89,12 @@ else
   exit 1
 fi
 
+probe="$MOUNTPOINT/.origami-write-test-$$"
+if ! printf ok > "$probe" 2>/dev/null; then
+  die "The mount is there, but root on the host cannot write to $MOUNTPOINT. Check the Samba add-on (share 'config', user, add-on started) or the folder permissions."
+fi
+rm -f "$probe"
+
 # Persist across host reboots
 FSTAB_LINE=""
 if [[ -n $SMB ]]; then
@@ -107,8 +113,35 @@ if ! pct config "$CTID" | grep -q "mp.*=$MOUNTPOINT"; then
   while pct config "$CTID" | grep -q "^mp${idx}:"; do idx=$((idx + 1)); done
   msg "Attaching $MOUNTPOINT to container $CTID as mp${idx} …"
   pct set "$CTID" "-mp${idx}" "${MOUNTPOINT},mp=/ha-config"
+  added=1
 else
+  added=0
   msg "Container $CTID already has /ha-config."
+fi
+
+if [[ $added -eq 1 ]] && pct status "$CTID" 2>/dev/null | grep -q running; then
+  msg "Restarting container $CTID so it sees the new mount …"
+  pct reboot "$CTID" >/dev/null
+fi
+
+msg "Waiting for the container …"
+for _ in $(seq 1 60); do
+  if pct status "$CTID" 2>/dev/null | grep -q running && pct exec "$CTID" -- true >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+
+msg "Checking write access inside the container …"
+if pct exec "$CTID" -- bash -c 'f=/ha-config/.origami-write-test-$$; if printf ok >"$f" 2>/dev/null; then rm -f "$f"; exit 0; fi; exit 1'; then
+  msg "Write access to /ha-config confirmed."
+else
+  warn "The container cannot write to /ha-config."
+  warn "Samba add-on: check that the share 'config' is writable for this user and that the add-on is started."
+  warn "Unprivileged container: a bind-mounted folder must be owned by UID 100000 on the host (or world-writable)."
+  pct exec "$CTID" -- ls -lan /ha-config 2>/dev/null | sed 's/^/   /' || true
+  pct exec "$CTID" -- mount 2>/dev/null | grep ha-config | sed 's/^/   /' || true
+  die "No write access from inside the container. See the hints above."
 fi
 
 msg "Done. Open the wizard and press \"Zugriff prüfen\"."
