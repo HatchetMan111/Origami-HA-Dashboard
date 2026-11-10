@@ -97,6 +97,11 @@ ensure_template() {
   template=$(pveam list "$storage" 2>/dev/null | awk '/debian-12-standard/ {print $1; exit}')
   [[ -n $template ]] && { printf '%s' "$template"; return; }
 
+  if [[ $DRY_RUN -eq 1 ]]; then
+    printf '%s:<debian-13-standard>' "$storage"
+    return
+  fi
+
   warn "No Debian template found, downloading one …"
   pveam update >/dev/null
   local name

@@ -177,6 +177,7 @@ export function discover({ states, registries, config }) {
     warnings: [
       ...(rooms.length ? [] : ["Keine Bereiche (Areas) gefunden. Lege in Home Assistant Bereiche an oder ordne Entitäten manuell zu."]),
       ...(global.weather ? [] : ["Keine Wetter-Entität gefunden – die Wetterkarte wird übersprungen."]),
+      ...(allLights.length ? [] : ["Keine Lichter gefunden – das Lichter-Pop-up wird übersprungen."]),
     ],
   };
 }

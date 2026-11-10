@@ -58,6 +58,8 @@ bash install/origami.sh --id 120 --ip 192.168.1.50/24 --gw 192.168.1.1 \
 
 `--dry-run` zeigt nur, was passieren würde. Alle Optionen: `bash install/origami.sh --help`.
 
+> `--ha-config` erwartet einen **bereits dauerhaft gemounteten** Pfad auf dem Host. Für HAOS ist der spätere Samba-Weg meist einfacher.
+
 ### 1. `/config` einbinden (HAOS)
 
 Wenn du den Container ohne `--ha-config` installiert hast, kannst du den Zugriff später nachziehen. Auf dem Proxmox-Host:
