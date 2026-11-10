@@ -11,6 +11,11 @@ export const HOST = process.env.HOST || "0.0.0.0";
 
 export const ORIGAMI_REPO = process.env.ORIGAMI_REPO || "hazymorning/origami";
 export const ORIGAMI_TAG = process.env.ORIGAMI_TAG || "V3.0";
+// SHA-256 of the pinned source tarball. Set ORIGAMI_SHA256 when overriding the
+// tag, otherwise the download is rejected.
+export const ORIGAMI_SHA256 =
+  process.env.ORIGAMI_SHA256 ||
+  (ORIGAMI_TAG === "V3.0" ? "379ffc7de827895ba60c25e27355860657e577ae87bd7b24116ae8e681d7b03a" : "");
 
 export const VENDOR_DIR = path.join(DATA_DIR, "vendor");
 export const CACHE_DIR = path.join(DATA_DIR, "cache");

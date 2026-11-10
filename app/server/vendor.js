@@ -1,8 +1,9 @@
 import { execFile } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
-import { CACHE_DIR, ORIGAMI_REPO, ORIGAMI_TAG, VENDOR_DIR } from "./config.js";
+import { CACHE_DIR, ORIGAMI_REPO, ORIGAMI_SHA256, ORIGAMI_TAG, VENDOR_DIR } from "./config.js";
 
 const exec = promisify(execFile);
 
@@ -31,25 +32,30 @@ export async function syncVendor(log = () => {}, tag = TAG) {
   if (isSynced(tag)) return vendorPath(tag);
 
   const tarball = path.join(CACHE_DIR, `origami-${tag}.tar.gz`);
+  if (ORIGAMI_SHA256 && fs.existsSync(tarball)) {
+    const actual = crypto.createHash("sha256").update(fs.readFileSync(tarball)).digest("hex");
+    if (actual !== ORIGAMI_SHA256) fs.rmSync(tarball, { force: true });
+  }
   if (!fs.existsSync(tarball)) {
-    const urls = [
-      `https://codeload.github.com/${ORIGAMI_REPO}/tar.gz/refs/tags/${tag}`,
-      `https://codeload.github.com/${ORIGAMI_REPO}/tar.gz/refs/heads/main`,
-    ];
-    let ok = false;
-    for (const url of urls) {
-      try {
-        log(`Lade Origami (${tag}) …`);
-        const response = await fetch(url, { redirect: "follow" });
-        if (!response.ok) throw new Error(String(response.status));
-        fs.writeFileSync(tarball, Buffer.from(await response.arrayBuffer()));
-        ok = true;
-        break;
-      } catch (error) {
-        log(`Download fehlgeschlagen: ${error.message}`, "warn");
-      }
+    const url = `https://codeload.github.com/${ORIGAMI_REPO}/tar.gz/refs/tags/${tag}`;
+    log(`Lade Origami (${tag}) …`);
+    const response = await fetch(url, { redirect: "follow" });
+    if (!response.ok) {
+      throw new Error(
+        `Origami ${tag} konnte nicht geladen werden (${response.status}). ` +
+          "Internetverbindung prüfen oder den Tag in app/server/config.js anpassen.",
+      );
     }
-    if (!ok) throw new Error("Origami konnte nicht geladen werden. Internetverbindung prüfen.");
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (!ORIGAMI_SHA256) {
+      log("Warnung: kein SHA-256 für diesen Origami-Tag hinterlegt (ORIGAMI_SHA256).", "warn");
+    } else if (crypto.createHash("sha256").update(buffer).digest("hex") !== ORIGAMI_SHA256) {
+      throw new Error(
+        `SHA-256 des Origami-Archivs stimmt nicht (Tag ${tag}). ` +
+          "Der Download wurde abgebrochen – nichts wurde installiert.",
+      );
+    }
+    fs.writeFileSync(tarball, buffer);
   }
 
   const tmp = fs.mkdtempSync(path.join(CACHE_DIR, "origami-extract-"));

@@ -28,19 +28,34 @@ export function parseCookies(request) {
   for (const part of header.split(";")) {
     const index = part.indexOf("=");
     if (index === -1) continue;
-    out[part.slice(0, index).trim()] = decodeURIComponent(part.slice(index + 1).trim());
+    const name = part.slice(0, index).trim();
+    try {
+      out[name] = decodeURIComponent(part.slice(index + 1).trim());
+    } catch {
+      out[name] = part.slice(index + 1).trim();
+    }
   }
   return out;
 }
 
 export async function readJson(request, limit = 1024 * 1024) {
   return new Promise((resolve, reject) => {
+    const type = String(request.headers["content-type"] || "")
+      .split(";")[0]
+      .trim()
+      .toLowerCase();
+    // Reject form/plain-text bodies: they can be sent cross-site without a
+    // CORS preflight. The wizard always sends application/json.
+    if (type && type !== "application/json") {
+      reject(Object.assign(new Error("Content-Type must be application/json."), { status: 415 }));
+      return;
+    }
     let size = 0;
     const chunks = [];
     request.on("data", (chunk) => {
       size += chunk.length;
       if (size > limit) {
-        reject(new Error("Request body too large."));
+        reject(Object.assign(new Error("Request body too large."), { status: 413 }));
         request.destroy();
         return;
       }
@@ -60,10 +75,18 @@ export async function readJson(request, limit = 1024 * 1024) {
 
 export function serveStatic(request, response) {
   const url = new URL(request.url, "http://localhost");
-  let pathname = decodeURIComponent(url.pathname);
+  let pathname;
+  try {
+    pathname = decodeURIComponent(url.pathname);
+  } catch {
+    response.writeHead(400).end("Bad Request");
+    return true;
+  }
   if (pathname === "/") pathname = "/index.html";
-  const file = path.resolve(PUBLIC_DIR, `.${pathname}`);
-  if (!file.startsWith(path.resolve(PUBLIC_DIR))) {
+  const root = path.resolve(PUBLIC_DIR);
+  const file = path.resolve(root, `.${pathname}`);
+  const relative = path.relative(root, file);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
     response.writeHead(403).end("Forbidden");
     return true;
   }

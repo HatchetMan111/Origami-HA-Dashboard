@@ -93,7 +93,7 @@ export function setupCode() {
       /* next */
     }
   }
-  const code = crypto.randomBytes(4).toString("hex").toUpperCase();
+  const code = crypto.randomBytes(6).toString("hex").toUpperCase();
   fs.writeFileSync(candidates[0], `${code}\n`, { mode: 0o600 });
   return code;
 }
@@ -125,5 +125,8 @@ export function checkSession(cookie) {
 export function verifySetupCode(input) {
   const code = setupCode();
   if (code === "disabled") return true;
-  return typeof input === "string" && input.trim().toUpperCase() === code.toUpperCase();
+  if (typeof input !== "string") return false;
+  const given = crypto.createHash("sha256").update(input.trim().toUpperCase()).digest();
+  const expected = crypto.createHash("sha256").update(code.toUpperCase()).digest();
+  return crypto.timingSafeEqual(given, expected);
 }

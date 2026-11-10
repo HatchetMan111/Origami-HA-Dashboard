@@ -4,11 +4,11 @@
   --card: #fffdfa;
   --ink: #181715;
   --ink-2: #5c5952;
-  --ink-3: #8a857c;
+  --ink-3: #6f6a62;
   --line: #e2ddd5;
   --accent: #2f6b57;
   --accent-soft: #e3ede8;
-  --warn: #a7651f;
+  --warn: #8a4f12;
   --warn-soft: #f7ecdc;
   --bad: #a33a2f;
   --bad-soft: #f8e5e2;
@@ -18,7 +18,7 @@
   --radius-sm: 14px;
   --shadow: 0 1px 2px rgba(24, 23, 21, 0.04), 0 10px 30px rgba(24, 23, 21, 0.06);
   --shadow-soft: 0 1px 2px rgba(24, 23, 21, 0.04), 0 4px 12px rgba(24, 23, 21, 0.04);
-  --font: "Montserrat", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -243,6 +243,29 @@ button, .button {
 button:hover, .button:hover { background: var(--paper-2); }
 button:active, .button:active { transform: scale(0.985); }
 button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+button:focus-visible,
+.button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+button:focus-visible, .button:focus-visible { border-radius: 999px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 
 button.primary, .button.primary {
   background: var(--ink);

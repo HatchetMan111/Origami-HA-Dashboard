@@ -57,7 +57,30 @@ pct exec 120 -- curl -I https://cdn.jsdelivr.net
 pct exec 120 -- curl -I https://codeload.github.com
 ```
 
-Schlägt ein Plugin fehl, steht das im Apply-Log als Warnung; der Rest wird trotzdem installiert. Der Download landet in `/opt/origami/data/cache` und wird beim nächsten Versuch wiederverwendet.
+Schlägt ein Plugin fehl, steht das im Apply-Log als Warnung; der Rest wird trotzdem installiert. Der Download landet in `/opt/origami/data/cache` und wird beim nächsten Versuch wiederverwendet – aber nur, wenn die SHA-256-Prüfsumme passt.
+
+**„Prüfsumme stimmt nicht“ / „SHA-256 mismatch“**
+
+Der Download wurde unterwegs verändert oder die gecachte Datei ist alt. Der Cache wird automatisch verworfen und neu geladen. Bleibt der Fehler:
+
+```bash
+pct exec 120 -- rm -rf /opt/origami/data/cache
+pct exec 120 -- systemctl restart origami
+```
+
+Dann erneut installieren. Prüfe außerdem, ob eine Firewall/Proxy die Datei verändert (z. B. Virenscanner mit TLS-Interception).
+
+**Dienst startet nach dem Härten nicht**
+
+Die systemd-Unit nutzt `ProtectSystem=strict`, `PrivateDevices`, `ProtectProc=invisible` und eine reduzierte Capability-Liste. Prüfe:
+
+```bash
+pct exec 120 -- systemctl status origami
+pct exec 120 -- journalctl -u origami -n 80
+pct exec 120 -- ls -ld /ha-config /opt/origami/data
+```
+
+`/ha-config` und `/opt/origami/data` müssen existieren. Fehlt `/ha-config`, zuerst `install/ha-mount.sh` ausführen oder den Ordner im Container anlegen.
 
 ## Dashboard fehlt oder ist leer
 

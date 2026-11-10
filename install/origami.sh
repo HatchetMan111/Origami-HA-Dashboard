@@ -172,15 +172,14 @@ create_ct() {
     [[ -n $GATEWAY ]] && net+=",gw=${GATEWAY}"
   fi
 
-  # RC: the comma in --features is part of the Proxmox value, not an array separator
-  # shellcheck disable=SC2054
+  # No extra --features: the appliance runs one Node service and needs neither
+  # nesting (Docker-in-LXC) nor keyctl. Less surface inside an unprivileged CT.
   local args=(create "$id" "$tmpl"
     --hostname "$CT_HOSTNAME"
     --cores "$CORES" --memory "$RAM" --swap "$RAM"
     --rootfs "${storage}:${DISK}"
     --net0 "$net"
     --unprivileged 1
-    --features nesting=1,keyctl=1
     --onboot 1
     --start 1
     --description "Origami setup appliance for Home Assistant")
@@ -419,7 +418,9 @@ msg "Storage: Container=${STORAGE}, Templates=${TEMPLATE_STORAGE}"
 TMPL=$(ensure_template "$TEMPLATE_STORAGE")
 [[ -n $TMPL ]] || die "No template found."
 
-SETUP_CODE=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n' | cut -c1-8 | tr 'a-f' 'A-F')
+# 48 bits of entropy. The code guards a LAN-only setup UI, but 8 hex chars
+# (32 bits) is too little for a public appliance.
+SETUP_CODE=$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n' | tr 'a-f' 'A-F')
 [[ ${#SETUP_CODE} -eq 8 ]] || die "Konnte keinen Setup-Code erzeugen."
 
 msg "Creating container $CTID …"

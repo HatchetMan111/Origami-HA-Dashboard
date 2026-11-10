@@ -14,15 +14,38 @@ Environment=NODE_ENV=production
 Environment=PORT=8080
 Environment=DATA_DIR=/opt/origami/data
 Environment=HA_CONFIG=/ha-config
-Restart=on-failure
-RestartSec=3
+
+# --- filesystem / process sandbox -------------------------------------------
 NoNewPrivileges=yes
 PrivateTmp=yes
+PrivateDevices=yes
 ProtectHome=yes
 ProtectSystem=strict
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+UMask=0077
 ReadWritePaths=/opt/origami/data /ha-config
-# Needed for the loopback health check only
+
+# Only the capabilities needed to write files owned by the host's root mapping
+# in the bind-mounted /config. Everything else is dropped.
+CapabilityBoundingSet=CAP_DAC_OVERRIDE
+AmbientCapabilities=
+
+# Outbound HTTP(S) to Home Assistant and GitHub, plus DNS via AF_UNIX.
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+Restart=on-failure
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target

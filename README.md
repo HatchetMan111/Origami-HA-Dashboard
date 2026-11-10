@@ -66,8 +66,10 @@ Am Ende steht dort:
 
 ```
 Setup wizard   http://192.168.1.50:8080
-Setup code     AB12CD34
+Setup code     AB12CD34EF56
 ```
+
+> Für reproduzierbare Installationen nach dem ersten Release den Tag auschecken: `git checkout v0.1.0`. Der Branch `main` ist beweglich; ein Tag ist es nicht.
 
 Der Setup-Code liegt zusätzlich im Container unter `/opt/origami/setup-code`.
 
@@ -264,14 +266,130 @@ Damit kannst du alles über Samba, Studio Code Server oder SSH selbst nach `/con
 
 ---
 
+## Appliance aktualisieren
+
+Die Appliance ist ein normales Git-Checkout auf dem Proxmox-Host. Der Installer legt neue Container an; für ein Update im **bestehenden** Container die Dateien übernehmen:
+
+```bash
+cd ~/Origami-HA-Dashboard
+git pull
+
+# App + Skripte in den Container bringen
+tar czf /tmp/origami-update.tgz app scripts
+pct push <CTID> /tmp/origami-update.tgz /root/origami-update.tgz
+pct exec <CTID> -- tar xzf /root/origami-update.tgz -C /opt/origami
+
+# systemd-Unit aktualisieren (Sandbox/Härtung)
+pct push <CTID> config/origami.service /etc/systemd/system/origami.service
+pct exec <CTID> -- systemctl daemon-reload
+pct exec <CTID> -- systemctl restart origami
+pct exec <CTID> -- rm -f /root/origami-update.tgz
+```
+
+Nach dem Update im Wizard erneut **Zugriff prüfen** und die Installation wiederholen. Der Apply ist idempotent: vorhandene Dateien, Plugins und Ressourcen werden nicht doppelt angelegt.
+
+> Achte darauf, dass `app/server/config.js` und `app/server/plugins.js` zusammenpassen: Tag und SHA-256 gehören immer zu einem Versionspaar.
+
+---
+
 ## Sicherheit und Datenschutz
 
-- Der Dienst läuft als **root innerhalb eines unprivilegierten LXC**. Das ist nötig, weil der eingebundene `/config`-Ordner auf dem Host der Container-Root-UID gehört. Der Container hat keine Root-Rechte auf dem Proxmox-Host.
+**Bedrohungsmodell:** Die Appliance ist für ein vertrauenswürdiges lokales Netz gedacht – nicht für das offene Internet. Wer den Setup-Code hat, kann den Long-Lived Token setzen und damit Home Assistant vollständig steuern. Behandle den Container wie einen Admin-Zugang zu deinem Smart Home.
+
+### Zugriff und Anmeldung
+
+- Der Dienst läuft als **root innerhalb eines unprivilegierten LXC**. Das ist nötig, weil der eingebundene `/config`-Ordner der Container-Root-UID gehört. Der Container hat keine Root-Rechte auf dem Proxmox-Host.
+- Die Oberfläche ist mit einem **48-Bit-Setup-Code** geschützt (12 Hex-Zeichen, zufällig erzeugt, Datei `0600`). Er steht im Container unter `/opt/origami/setup-code`.
+- Login-Fehlversuche werden **pro IP** begrenzt (10 Versuche, dann 10 Minuten Sperre). Das Session-Cookie ist `HttpOnly`, `SameSite=Lax`, 12 Stunden gültig und wird hinter HTTPS automatisch mit `Secure` gesetzt.
+- `DISABLE_AUTH=1` ist **nur für Entwicklung** gedacht. In der Appliance ist es nicht gesetzt.
+- Der Setup-Code ist kein Passwort für Dauerbetrieb: Nach der Einrichtung kannst du ihn durch Löschen von `/opt/origami/setup-code` und Neustart des Dienstes neu erzeugen.
+
+### Transportverschlüsselung
+
+- Die Appliance bringt **kein TLS** mit. Im LAN ist HTTP üblich; für alles darüber hinaus einen Reverse Proxy davorschalten (Caddy, nginx, Traefik) und nur dessen Port veröffentlichen.
+- Hinter einem Proxy `TRUST_PROXY=1` setzen, damit `X-Forwarded-For`/`X-Forwarded-Proto` ausgewertet werden. **Ohne Proxy nicht setzen** – sonst lässt sich das Rate-Limit per Header umgehen.
+- Beispiel nginx:
+
+  ```nginx
+  server {
+    listen 443 ssl;
+    server_name origami.example.lan;
+    # ssl_certificate …;
+    location / {
+      proxy_pass http://10.0.0.42:8080;
+      proxy_set_header Host $host;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto $scheme;
+    }
+  }
+  ```
+
+### Netzwerk und Firewall
+
+- Port `8080` nur aus dem Admin-Netz erreichbar machen, z. B. auf dem Proxmox-Host:
+
+  ```bash
+  iptables -A INPUT -p tcp --dport 8080 -s 10.0.0.0/24 -j ACCEPT
+  iptables -A INPUT -p tcp --dport 8080 -j DROP
+  ```
+
+- Der Container braucht ausgehend nur HTTPS (GitHub/jsDelivr) und die Home-Assistant-IP. Wenn du die Plugin-Downloads vorher cachest, kann er nach der Installation offline bleiben.
+
+### Token und Home-Assistant-Zugriff
+
 - Der Long-Lived Token wird mit **AES-256-GCM** verschlüsselt in `data/state.json` gespeichert; der Schlüssel liegt in `data/secret.key` (Modus `0600`, Verzeichnis `0700`).
-- Die Weboberfläche ist mit dem **Setup-Code** geschützt (signiertes Session-Cookie, 12 Stunden, Rate-Limit pro IP).
-- Der Token verlässt den Container nicht. Es gibt keine Cloud, keine Telemetrie und keinen externen Dienst außer GitHub/jsDelivr für die Plugin-Downloads.
-- Vor jedem Schreiben wird ein Backup der betroffenen Dateien angelegt.
-- Der Assistent sollte **nicht** direkt aus dem Internet erreichbar sein. Für Fernzugriff VPN oder den Home-Assistant-Zugang nutzen.
+- Der Token verlässt den Container nicht. Es gibt keine Cloud, keine Telemetrie und keinen externen Dienst außer GitHub/jsDelivr für die Downloads.
+- Erzeuge den Token möglichst für einen **eigenen HA-Benutzer** mit Admin-Rechten und widerrufe ihn (Profil → Sicherheit → Token), wenn du die Appliance entfernst.
+- Das Schreiben nach `/config` ist mächtig: Die Appliance kann Themes, Ressourcen, Integrationen und Dashboards ändern. Vor jedem Schreiben entsteht ein Backup; Rollback ist eingebaut.
+
+### Downloads und Updates
+
+- Origami und alle Plugins sind auf **unveränderliche Tags** gepinnt.
+- Für Origami und jedes Plugin ist eine **SHA-256-Prüfsumme** hinterlegt. Stimmt sie nicht, bricht die Installation ab und es wird nichts geschrieben. Ein `main`-Fallback gibt es nicht.
+- Beim Aktualisieren einer Version müssen Tag und Prüfsumme gemeinsam geändert werden (`app/server/plugins.js`, `app/server/config.js`).
+- Die Prüfsummen werden beim Download **und** bei der Wiederverwendung aus dem Cache geprüft.
+
+### Härtung des Dienstes
+
+- systemd sandboxt den Prozess: `ProtectSystem=strict`, `ProtectHome`, `PrivateDevices`, `ProtectKernel*`, `ProtectProc=invisible`, `RestrictNamespaces`, `RestrictSUIDSGID`, `LockPersonality`, `UMask=0077`.
+- Die Capability-Liste ist auf `CAP_DAC_OVERRIDE` reduziert – nur das, was zum Schreiben in den bind-gemounteten `/config` nötig ist.
+- Der Container wird **ohne** `nesting`/`keyctl` erstellt.
+
+### Samba und Credentials
+
+- Das Samba-Add-on sollte einen **eigenen Benutzer** und ein starkes Passwort bekommen; `allow_hosts` auf die Proxmox-IP bzw. das Admin-Netz begrenzen.
+- Die Zugangsdaten liegen auf dem Proxmox-Host in `/etc/origami-cifs.credentials` (Modus `0600`) und werden für `/etc/fstab` verwendet.
+- Der Share ist für den Container beschreibbar. Wer Zugriff auf den Container oder den Proxmox-Host hat, kann daher auch Home Assistants `/config` ändern.
+
+### Backups
+
+- Backups liegen unter `/opt/origami/data/backups` **im Container**. Sie schützen gegen einen fehlgeschlagenen Apply, nicht gegen Verlust des Containers oder Datastores. Kopiere sie regelmäßig auf ein anderes System.
+- Für HAOS zusätzlich die eingebauten Home-Assistant-Backups nutzen.
+
+### Bekannte Restrisiken
+
+- Kein Mehrbenutzerbetrieb, keine Rollen, kein Audit-Log: Die Appliance ist ein Ein-Personen-Setup-Werkzeug.
+- Plugin-Code läuft später im Browser bzw. in Home Assistant. Die Prüfsummen garantieren, dass du genau die geprüfte Version installierst – sie bewerten den Code nicht.
+- Die Home-Assistant-URL ist frei wählbar: Wer den Setup-Code hat, kann den Container als HTTP-Client in dein Netz nutzen (SSRF). Das ist bei einem Admin-Setup-Werkzeug beabsichtigt, aber ein Grund, Port `8080` nicht öffentlich zu machen.
+- Wenn der Container kompromittiert wird, sind der HA-Token und der Schreibzugriff auf `/config` kompromittiert. Netzwerksegmentierung und ein eigener HA-Benutzer begrenzen den Schaden.
+
+---
+
+## Launch-Checkliste
+
+Vor dem ersten öffentlichen Lauf einmal durchgehen:
+
+- [ ] `bash test/lint.sh` läuft grün (Bash-Syntax, ShellCheck, Node-Syntax, Tests).
+- [ ] Frischer Proxmox-Host: `bash install/origami.sh --check` zeigt keine Konflikte.
+- [ ] Installation in einem **neuen** Container getestet, nicht nur im Entwicklungscontainer.
+- [ ] `/config`-Mount überlebt einen Reboot des Proxmox-Hosts (`mount -a`, `fstab` mit `nofail`).
+- [ ] Wizard-Login mit falschem Code: nach 10 Versuchen kommt `429`.
+- [ ] Apply auf einer **Test-HA-Instanz** mit Backup und Rollback geprüft.
+- [ ] Dashboard unter `/origami-dashboard` erreichbar, Ressourcen nach HA-Neustart vorhanden.
+- [ ] Port `8080` ist nicht aus dem Internet erreichbar (Port-Check von außen).
+- [ ] `README`, `docs/TROUBLESHOOTING.md` und Screenshots passen zur aktuellen Version.
+- [ ] Lizenzhinweis (AGPL-3.0) und Origami-Attribution sichtbar.
+- [ ] Tag/Release `v0.1.0` erstellen, danach Änderungen nur noch über Tags.
 
 ---
 
@@ -290,7 +408,7 @@ Weil die Appliance auch für HAOS-VMs, HA-Container und HA-LXCs funktionieren so
 Ja. Es ist ein normales Storage-Dashboard und lässt sich im Home-Assistant-Dashboard-Editor bearbeiten. Ein erneuter Lauf des Assistenten überschreibt es wieder.
 
 **Was passiert bei einem Origami-Update?**
-Der Installer ist auf `V3.0` gepinnt. Ein Update auf eine neue Origami-Version ist bewusst ein eigener Schritt, damit sich nichts unbemerkt ändert.
+Der Installer ist auf `V3.0` gepinnt und prüft beim Download eine SHA-256-Prüfsumme. Ein Update auf eine neue Origami-Version ist bewusst ein eigener Schritt, damit sich nichts unbemerkt ändert.
 
 **Kostet das etwas?**
 Nein. Das Projekt ist quelloffen; es fallen nur die Kosten für deinen Proxmox-Host an.

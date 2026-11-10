@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import http from "node:http";
-import os from "node:os";
 import path from "node:path";
 import { APP_VERSION, BACKUP_DIR, DASHBOARD_TITLE, HOST, PORT } from "./config.js";
 import { configAccess, applyAll, buildBundle, installedPlugins, rollback, verify } from "./apply.js";
@@ -46,11 +45,45 @@ const DEFAULT_OPTIONS = {
 const loginFailures = new Map();
 
 function clientIp(request) {
-  return request.headers["x-forwarded-for"]?.split(",")[0]?.trim() || request.socket.remoteAddress || "?";
+  // Only trust X-Forwarded-For behind a proxy you control. Otherwise anyone
+  // could rotate the header and bypass the login rate limit.
+  if (process.env.TRUST_PROXY === "1") {
+    const forwarded = request.headers["x-forwarded-for"];
+    if (forwarded) return String(forwarded).split(",")[0].trim();
+  }
+  return request.socket.remoteAddress || "?";
 }
 
-function sessionCookie(token) {
-  return `origami_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=43200`;
+function isSecureRequest(request) {
+  if (request.socket.encrypted) return true;
+  if (process.env.TRUST_PROXY === "1") {
+    const proto = String(request.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+    if (proto === "https") return true;
+  }
+  return false;
+}
+
+function sameOrigin(request) {
+  const origin = request.headers.origin;
+  if (!origin) return true; // curl, scripts, same-origin GET
+  try {
+    return new URL(origin).host === request.headers.host;
+  } catch {
+    return false;
+  }
+}
+
+function pruneLoginFailures() {
+  if (loginFailures.size < 500) return;
+  const now = Date.now();
+  for (const [ip, entry] of loginFailures) {
+    if (entry.until < now && entry.count === 0) loginFailures.delete(ip);
+  }
+  if (loginFailures.size > 5000) loginFailures.clear();
+}
+
+function sessionCookie(token, secure) {
+  return `origami_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=43200${secure ? "; Secure" : ""}`;
 }
 
 function requireAuth(request, response) {
@@ -175,12 +208,12 @@ route("GET", /^\/api\/health$/, async (_request, response) => {
     version: APP_VERSION,
     origamiTag: TAG,
     vendor: isSynced(),
-    host: os.hostname(),
   });
 });
 
 route("POST", /^\/api\/login$/, async (request, response) => {
   const ip = clientIp(request);
+  pruneLoginFailures();
   const failures = loginFailures.get(ip) || { count: 0, until: 0 };
   if (failures.until > Date.now()) {
     json(response, 429, { error: "Zu viele Versuche. Bitte kurz warten." });
@@ -198,12 +231,15 @@ route("POST", /^\/api\/login$/, async (request, response) => {
     return;
   }
   loginFailures.delete(ip);
-  response.setHeader("Set-Cookie", sessionCookie(issueSession()));
+  response.setHeader("Set-Cookie", sessionCookie(issueSession(), isSecureRequest(request)));
   json(response, 200, { ok: true, ...stateForClient() });
 });
 
-route("POST", /^\/api\/logout$/, async (_request, response) => {
-  response.setHeader("Set-Cookie", "origami_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+route("POST", /^\/api\/logout$/, async (request, response) => {
+  response.setHeader(
+    "Set-Cookie",
+    `origami_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${isSecureRequest(request) ? "; Secure" : ""}`,
+  );
   json(response, 200, { ok: true });
 });
 
@@ -474,9 +510,21 @@ const server = http.createServer(async (request, response) => {
   response.setHeader("X-Content-Type-Options", "nosniff");
   response.setHeader("Referrer-Policy", "no-referrer");
   response.setHeader("X-Frame-Options", "DENY");
+  response.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  response.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+  response.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  response.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; " +
+      "connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+  );
 
   const url = new URL(request.url, "http://localhost");
   try {
+    if (request.method === "POST" && !sameOrigin(request)) {
+      json(response, 403, { error: "Ungültige Herkunft (Origin)." });
+      return;
+    }
     for (const entry of routes) {
       if (entry.method !== request.method) continue;
       const match = entry.pattern.exec(url.pathname);

@@ -89,9 +89,9 @@ function accessBanner() {
   const detail = access.message ? `<div class="mt small">${esc(access.message)}</div>` : "";
   const action = access.exists
     ? `<div class="mt small">Der Ordner ist eingebunden, aber nicht beschreibbar oder keine HA-Konfiguration.</div>`
-    : `<div class="mt small">Binde den Ordner auf dem Proxmox-Host ein:</div>
-       <div class="mt"><code class="inline">bash install/ha-mount.sh --ctid &lt;CTID&gt; --smb '//&lt;HA-IP&gt;/config' --user &lt;user&gt; --pass '&lt;pass&gt;'</code></div>
-       <div class="mt small">HAOS: „Samba share“-Add-on aktivieren.</div>`;
+    : `<div class="mt small">Binde den Ordner auf dem Proxmox-Host ein – interaktiv, das Skript findet die HA-IP selbst:</div>
+       <div class="mt"><code class="inline">bash install/ha-mount.sh --ctid &lt;CTID&gt;</code></div>
+       <div class="mt small">HAOS: „Samba share“-Add-on starten; die HA-IP steht im Add-on-Log.</div>`;
   return `<div class="banner warn">
     <strong>Kein Schreibzugriff auf Home Assistants /config</strong>
     Ohne diesen Zugriff lassen sich Theme, Fonts und Plugins nicht installieren.
@@ -118,7 +118,8 @@ function renderStepper() {
   $("#stepper").innerHTML = steps
     .map(([label], index) => {
       const state = index < activeIndex ? "done" : index === activeIndex ? "active" : "";
-      return `<div class="step ${state}"><span class="num">${index + 1}</span>${label}</div>`;
+      const current = index === activeIndex ? ' aria-current="step"' : "";
+      return `<div class="step ${state}"${current}><span class="num">${index + 1}</span>${label}</div>`;
     })
     .join("");
 }
@@ -143,7 +144,7 @@ function authView() {
       <code class="inline">cat /opt/origami/setup-code</code></p>
     <form data-form="login">
       <label class="field"><span>Setup-Code</span>
-        <input type="text" name="code" autocomplete="one-time-code" autocapitalize="characters" placeholder="z. B. 7K3M9Q2A" required />
+        <input type="text" name="code" autocomplete="one-time-code" autocapitalize="characters" placeholder="z. B. 7K3M9Q2A4B6C" required autofocus />
       </label>
       <div class="row mt"><button class="primary" type="submit">Entsperren</button></div>
     </form>
@@ -178,7 +179,7 @@ function connectView() {
         </div>
         <div class="row mt">
           <button class="primary" type="submit">Verbinden</button>
-          <span class="hint">Das Token wird verschlüsselt gespeichert und nur für die Installation benutzt.</span>
+          <span class="hint">Das Token wird verschlüsselt lokal gespeichert und nur für diese Installation benutzt. Es braucht Admin-Rechte.</span>
         </div>
       </form>
     </section>`;
@@ -319,7 +320,7 @@ function applyView() {
   const created = S.session?.created;
   const last = S.session?.lastApply;
   const logs = (S.job?.logs || []).map((entry) => `<div class="${entry.level}">${esc(entry.message)}</div>`).join("");
-  const dashboardUrl = `${S.session?.connected?.url || ""}/lovelace/${S.plan?.dashboard?.urlPath || "origami"}`;
+  const dashboardUrl = `${S.session?.connected?.url || ""}/lovelace/${S.plan?.dashboard?.urlPath || "origami-dashboard"}`;
   const failed = S.job?.status === "error";
 
   return `<section class="card">
