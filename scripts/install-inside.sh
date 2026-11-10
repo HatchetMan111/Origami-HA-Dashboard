@@ -24,13 +24,13 @@ esac
 if ! command -v node >/dev/null 2>&1 || [[ $(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0) -lt $NODE_MAJOR ]]; then
   msg "Installing Node.js ${NODE_MAJOR} …"
   sums=$(curl -fsSL "https://nodejs.org/dist/latest-v${NODE_MAJOR}.x/SHASUMS256.txt")
-  file=$(printf '%s\n' "$sums" | awk -v a="linux-${node_arch}.tar.xz" '$2 ~ a"$" {print $2; exit}')
+  file=$(printf '%s\n' "$sums" | awk -v a="linux-${node_arch}.tar.xz" '$2 ~ a"$" {print $2; exit}' || true)
   [[ -n $file ]] || { echo "Could not resolve a Node.js tarball." >&2; exit 1; }
   tmp=$(mktemp -d)
   curl -fsSL "https://nodejs.org/dist/latest-v${NODE_MAJOR}.x/${file}" -o "$tmp/node.tar.xz"
   mkdir -p /usr/local/lib/nodejs
   tar xJf "$tmp/node.tar.xz" -C /usr/local/lib/nodejs
-  dir=$(find /usr/local/lib/nodejs -maxdepth 1 -type d -name 'node-v*' | head -1)
+  dir=$(find /usr/local/lib/nodejs -maxdepth 1 -type d -name 'node-v*' | sed -n '1p')
   ln -sf "$dir/bin/node" /usr/local/bin/node
   ln -sf "$dir/bin/npm" /usr/local/bin/npm
   ln -sf "$dir/bin/npx" /usr/local/bin/npx

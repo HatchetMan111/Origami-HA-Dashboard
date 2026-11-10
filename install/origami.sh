@@ -87,7 +87,7 @@ pick_storage() {
   for name in local-lvm local-zfs local; do
     if grep -qx "$name" <<<"$list"; then printf '%s' "$name"; return; fi
   done
-  printf '%s' "$(printf '%s\n' "$list" | sed '/^$/d' | head -1)"
+  printf '%s' "$(printf '%s\n' "$list" | sed '/^$/d' | sed -n '1p')"
 }
 
 pick_template_storage() {
@@ -100,7 +100,7 @@ pick_template_storage() {
   fi
 
   if grep -qx 'local' <<<"$list"; then printf 'local'; return; fi
-  printf '%s' "$(printf '%s\n' "$list" | sed '/^$/d' | head -1)"
+  printf '%s' "$(printf '%s\n' "$list" | sed '/^$/d' | sed -n '1p')"
 }
 
 ensure_template() {
@@ -178,7 +178,7 @@ wait_for_ct() {
 
 ct_ip() {
   local id=$1
-  pct exec "$id" -- bash -c "ip -4 -o addr show dev eth0 2>/dev/null | awk '{print \$4}' | cut -d/ -f1" | head -1
+  pct exec "$id" -- bash -c "ip -4 -o addr show dev eth0 2>/dev/null | awk '{print \$4}' | cut -d/ -f1" | sed -n '1p' || true
 }
 
 prepare_payload() {
@@ -199,7 +199,7 @@ prepare_payload() {
       || die "Could not download ${REPO}@${REF}. Set ORIGAMI_LXC_REPO/REF."
     tar xzf "$tmp/src.tgz" -C "$tmp"
     local appdir
-    appdir=$(find "$tmp" -maxdepth 2 -type d -name app | head -1)
+    appdir=$(find "$tmp" -maxdepth 2 -type d -name app | sed -n '1p')
     [[ -n $appdir ]] || die "Repository has no app/ directory."
     tar czf "$PAYLOAD" -C "$appdir" --exclude=node_modules --exclude=data --exclude=test .
     rm -rf "$tmp"
@@ -291,7 +291,8 @@ msg "Storage: Container=${STORAGE}, Templates=${TEMPLATE_STORAGE}"
 TMPL=$(ensure_template "$TEMPLATE_STORAGE")
 [[ -n $TMPL ]] || die "No template found."
 
-SETUP_CODE=$(tr -dc 'A-Z2-9' </dev/urandom | head -c 8)
+SETUP_CODE=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n' | cut -c1-8 | tr 'a-f' 'A-F')
+[[ ${#SETUP_CODE} -eq 8 ]] || die "Konnte keinen Setup-Code erzeugen."
 
 msg "Creating container $CTID …"
 create_ct "$CTID" "$TMPL" "$STORAGE"
