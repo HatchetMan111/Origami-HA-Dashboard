@@ -216,7 +216,7 @@ pct exec <CTID> -- bash -c 'touch /ha-config/.probe && rm /ha-config/.probe && e
 | `custom_components/bubble_card_tools/` | Bubble Card Tools (Integration, Neustart nötig) |
 | `configuration.yaml` | ergänzt `frontend.themes` und ggf. `frontend.extra_module_url` |
 | Lovelace-Ressourcen | Stylesheet + Plugin-Module |
-| Dashboard `Origami` | Pfad `/origami`, als Storage-Dashboard gespeichert |
+| Dashboard `Origami` | Pfad `/origami-dashboard`, als Storage-Dashboard gespeichert |
 | Helfer | `input_boolean.all_rooms`, `input_boolean.climate_table` |
 
 Origami selbst wird **nicht mitgeliefert**. Der Container lädt beim Installieren den gepinnten Stand `V3.0` von GitHub. So bleibt die Lizenz sauber und du bekommst genau die Vorlagen, aus denen das Dashboard gebaut wird.

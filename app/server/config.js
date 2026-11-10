@@ -18,7 +18,7 @@ export const BACKUP_DIR = path.join(DATA_DIR, "backups");
 export const STATE_FILE = path.join(DATA_DIR, "state.json");
 export const KEY_FILE = path.join(DATA_DIR, "secret.key");
 
-export const DASHBOARD_URL_PATH = "origami";
+export const DASHBOARD_URL_PATH = "origami-dashboard";
 export const DASHBOARD_TITLE = "Origami";
 export const DASHBOARD_ICON = "mdi:origami";
 

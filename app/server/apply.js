@@ -249,6 +249,11 @@ export async function ensureHelpers(ha, helpers, log = () => {}) {
 }
 
 export async function ensureDashboard(ha, dashboard, log = () => {}) {
+  if (!dashboard.urlPath || !dashboard.urlPath.includes("-")) {
+    throw new Error(
+      `Dashboard-Pfad "${dashboard.urlPath}" ist ungültig: Home Assistant verlangt einen Bindestrich, z. B. "origami-dashboard".`,
+    );
+  }
   const dashboards = await ha.dashboards();
   const existing = (dashboards || []).find((entry) => entry.url_path === dashboard.urlPath);
   let dashboardId = existing?.id;
@@ -460,7 +465,7 @@ export async function buildBundle(dashboard, options, outFile) {
       "     input_boolean.all_rooms      (Name: All rooms)",
       "     input_boolean.climate_table  (Name: Climate table)",
       "5. Theme im Profil auswählen („Origami“) und dashboard.yaml als Dashboard",
-      "   mit Pfad „origami“ anlegen.",
+      "   mit Pfad „origami-dashboard“ anlegen.",
       "",
       "Origami: https://github.com/hazymorning/origami (AGPL-3.0)",
       "Diese Sammlung enthält Origami-Dateien und steht damit ebenfalls unter AGPL-3.0.",

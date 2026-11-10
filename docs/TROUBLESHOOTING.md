@@ -61,7 +61,7 @@ Schlägt ein Plugin fehl, steht das im Apply-Log als Warnung; der Rest wird trot
 
 ## Dashboard fehlt oder ist leer
 
-- Nach dem Apply in Home Assistant: Einstellungen → Dashboards. Dort muss **Origami** mit Pfad `origami` stehen.
+- Nach dem Apply in Home Assistant: Einstellungen → Dashboards. Dort muss **Origami** mit Pfad `origami-dashboard` stehen.
 - Zeigt das Dashboard „Custom element doesn't exist: bubble-card“, fehlen die Ressourcen oder der Browser-Cache ist alt. Einstellungen → Dashboards → Ressourcen prüfen und die Seite neu laden (harter Reload).
 - Nach der Installation von **Bubble Card Tools** ist ein Home-Assistant-Neustart nötig. Der Assistent bietet ihn an.
 
