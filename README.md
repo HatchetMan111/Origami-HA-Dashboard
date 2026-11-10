@@ -1,115 +1,273 @@
 # Origami-LXC
 
-Eine kleine Proxmox-Appliance, die das [Origami-Dashboard](https://github.com/hazymorning/origami) in eine **bestehende** Home-Assistant-Installation einbaut – Theme, Fonts, Bubble-Card-Module, Plugins, Helfer und die Dashboard-Views. Danach öffnest du die Home-Assistant-Companion-App und hast ein Origami-Dashboard auf dem Handy.
+[![CI](https://github.com/HatchetMan111/Origami-HA-Dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/HatchetMan111/Origami-HA-Dashboard/actions/workflows/ci.yml)
+[![Lizenz: AGPL-3.0](https://img.shields.io/badge/Lizenz-AGPL--3.0-blue.svg)](LICENSE)
 
-Die Appliance ist kein Fork von Home Assistant und ersetzt keine Installation. Sie ist ein Einrichtungsassistent im eigenen LXC-Container, der über die Home-Assistant-REST- und WebSocket-API arbeitet und Dateien in `/config` ablegt.
+Ein Einrichtungsassistent als Proxmox-LXC, der das [Origami-Dashboard](https://github.com/hazymorning/origami) in eine **bestehende** Home-Assistant-Installation einbaut: Theme, Fonts, Bubble-Card-Module, Plugins, Helfer und die Dashboard-Ansichten. Danach öffnest du die Home-Assistant-Companion-App und hast ein aufgeräumtes, app-artiges Dashboard auf dem Handy – ohne YAML-Dateien von Hand zu bearbeiten.
 
-> **Status: v0.1 (MVP).** Der Home-View mit Begrüßung, Wetter, Raumkarten, Klima-Tabelle, Lichter-Pop-up und Navigationsleiste wird installiert. Raum-Pop-ups, Musik, TV, Saugroboter, Favoriten und weitere Origami-Ansichten folgen in v0.2.
+Die Appliance ist **kein Fork** von Home Assistant und ersetzt keine Installation. Sie verbindet sich über die Home-Assistant-REST- und WebSocket-API, legt Dateien in `/config` ab und schreibt das Dashboard über die offizielle Lovelace-API. Vorher wird ein Backup angelegt, ein Rollback ist eingebaut.
 
-## Was du bekommst
+> **Status: v0.1 (MVP).** Installiert werden der Home-View mit Begrüßung, Wetter, Raumkarten, Klima-Tabelle, Lichter-Pop-up und Navigationsleiste. Raum-Pop-ups, Musik, TV, Saugroboter, Favoriten und die restlichen Origami-Ansichten folgen in v0.2.
 
-| Teil | Details |
-| --- | --- |
-| Theme | `themes/origami.yaml` + Montserrat-Fonts unter `www/fonts` |
-| Module | Origami-Bubble-Card-Module unter `bubble_card/modules` |
-| Wetterbilder | Diorama-Assets unter `www/origami/weather` (lokal, kein CDN) |
-| Plugins | Bubble Card, Bubble Card Tools, Origami Header, Origami Notifications, Origami Weather, Navbar Card – gepinnte Versionen, direkt von GitHub/jsDelivr |
-| Dashboard | Dashboard `Origami` mit Pfad `/origami` |
-| Helfer | `input_boolean.all_rooms`, `input_boolean.climate_table` |
-| Sicherheit | Backup vor dem Schreiben, Rollback, Setup-Code für die Oberfläche |
+---
 
-Origami selbst wird **nicht** mitgeliefert. Der Container lädt beim Installieren den gepinnten Stand `V3.0` von GitHub – so bleibt die Lizenz sauber und du bekommst genau die Vorlagen, aus denen das Dashboard gebaut wird.
+## Was du am Ende hast
+
+- **Ein fertiges Dashboard** mit Origami-Design, das auf dem Handy wie eine eigene App wirkt.
+- **Raumkarten** mit Licht, Temperatur, Luftfeuchte und Fensterkontakt – automatisch aus deinen Home-Assistant-Bereichen vorgeschlagen.
+- **Wetterkarte** im Papier-Diorama-Stil, lokal ausgeliefert (keine externen Bild-URLs).
+- **Klima-Tabelle** über alle Räume, ein- und ausklappbar.
+- **Lichter-Pop-up** mit Slidern für deine Lampen und einem Gruppen-Schalter.
+- **Navigationsleiste** unten mit Lichtern und optionalem Menü.
+- **Kein YAML-Gefrickel:** Der Assistent zeigt dir vor dem Schreiben, was er tun wird, und prüft das Ergebnis danach.
+
+Zeitbedarf: etwa **10–15 Minuten**, davon sind die meisten Klicks im Assistenten.
+
+---
 
 ## Voraussetzungen
 
-- Proxmox VE 8 oder neuer, Root-Zugriff auf den Host
-- Eine laufende Home-Assistant-Installation (HAOS-VM, HA in einem LXC oder Container)
-- Ein **Long-Lived Access Token** aus Home Assistant: Profil → Sicherheit → Long-Lived Access Tokens
-- Schreibzugriff auf Home Assistants `/config` für Theme, Fonts und Plugins
-  - **HAOS:** „Samba share“-Add-on aktivieren und den Share auf dem Proxmox-Host einbinden
-  - **HA im LXC:** dessen Config-Pfad direkt bind-mounten
-- Netzwerk: der Container muss Home Assistant und GitHub erreichen; dein Handy muss den Container erreichen
+| Voraussetzung | Details |
+| --- | --- |
+| Proxmox VE | Version 8 oder neuer, Root-Zugriff auf den Host |
+| Home Assistant | laufend, aktuell genug für die Sections-View (HAOS-VM, HA im LXC oder Container) |
+| Token | Long-Lived Access Token mit Admin-Rechten: Profil → Sicherheit → Long-Lived Access Tokens |
+| Schreibzugriff auf `/config` | für Theme, Fonts und Plugins – bei HAOS über das „Samba share“-Add-on, bei HA im LXC über den Config-Pfad |
+| Netzwerk | Der Container erreicht Home Assistant und GitHub; dein Handy erreicht den Container |
 
-> Ohne Schreibzugriff auf `/config` funktioniert nur der lesende Teil (Verbinden, Zuordnen, Plan). Für die manuelle Installation gibt es ein Bundle (siehe unten).
+> **Ohne Schreibzugriff auf `/config`** funktionieren nur Verbinden, Zuordnen und Plan. Für die manuelle Installation kannst du dir im Assistenten ein fertiges Bundle herunterladen (siehe [Manueller Modus](#manueller-modus-ohne-schreibzugriff)).
 
-## Schnellstart
+---
 
-Auf dem **Proxmox-Host** als root:
+## Einrichtung Schritt für Schritt
+
+### 1. Container auf dem Proxmox-Host installieren
+
+Als **root** auf dem Proxmox-Host:
 
 ```bash
 git clone https://github.com/HatchetMan111/Origami-HA-Dashboard.git
-cd Origami-Proxmox
+cd Origami-HA-Dashboard
 bash install/origami.sh
 ```
 
-Der Installer fragt nach einer Bestätigung, legt einen Debian-13-LXC an, installiert Node.js 22 und startet den Dienst. Am Ende zeigt er Adresse und Setup-Code:
+Der Installer erklärt dir vorher, was er anlegt, und fragt einmal nach. Standardwerte:
+
+| Einstellung | Standard |
+| --- | --- |
+| Container-ID | nächste freie ab 100 |
+| Hostname | `origami` |
+| Ressourcen | 2 vCPU, 2 GB RAM, 8 GB Disk |
+| Netzwerk | `vmbr0`, DHCP |
+| Web-Port | `8080` |
+| Template | Debian 13 (oder 12), automatisch gewählt |
+
+Am Ende steht dort:
 
 ```
 Setup wizard   http://192.168.1.50:8080
 Setup code     AB12CD34
 ```
 
-Optionen (Auszug):
+Der Setup-Code liegt zusätzlich im Container unter `/opt/origami/setup-code`.
+
+**Eigene Werte** (Beispiel mit fester IP):
 
 ```bash
-bash install/origami.sh --id 120 --ip 192.168.1.50/24 --gw 192.168.1.1 \
-  --ha-config /tank/ha/config --port 8080
+bash install/origami.sh --id 120 --ip 192.168.1.50/24 --gw 192.168.1.1
 ```
 
-`--dry-run` zeigt nur, was passieren würde. Alle Optionen: `bash install/origami.sh --help`.
-
-> `--ha-config` erwartet einen **bereits dauerhaft gemounteten** Pfad auf dem Host. Für HAOS ist der spätere Samba-Weg meist einfacher.
-
-### 1. `/config` einbinden (HAOS)
-
-Wenn du den Container ohne `--ha-config` installiert hast, kannst du den Zugriff später nachziehen. Auf dem Proxmox-Host:
+**Nur ansehen, nichts ändern:**
 
 ```bash
-bash install/ha-mount.sh --ctid 120 \
-  --smb '//192.168.1.10/config' --user homeassistant --pass 'dein-passwort'
+bash install/origami.sh --dry-run
 ```
 
-Das mountet den Samba-Share und hängt ihn als `/ha-config` in den Container. Der Eintrag landet in `/etc/fstab` und übersteht Reboots.
+Alle Optionen: `bash install/origami.sh --help`.
 
-- In HAOS das Add-on **Samba share** installieren, Benutzer und Passwort setzen, Konfigurationsordner freigeben.
-- Läuft Home Assistant in einem eigenen LXC, nutze `--path /pfad/zu/config` oder `--ha-ctid <id>`.
+> `--ha-config /pfad/zu/config` kannst du direkt mitgeben, wenn der Ordner auf dem Host schon **dauerhaft** gemountet ist. Für HAOS ist der Samba-Weg im nächsten Schritt meist einfacher.
 
-### 2. Assistent öffnen
+### 2. Home Assistants `/config` einbinden
+
+#### HAOS (VM) – über das Samba-Add-on
+
+1. In Home Assistant: **Einstellungen → Add-ons → Add-on-Store → Samba share** installieren.
+2. Im Add-on einen Benutzer und ein Passwort setzen und den Ordner `config` freigeben.
+3. Auf dem Proxmox-Host:
+
+```bash
+bash install/ha-mount.sh --ctid <CTID> \
+  --smb '//<HA-IP>/config' --user <benutzer> --pass '<passwort>'
+```
+
+Das mountet den Share dauerhaft (inkl. `/etc/fstab`) und hängt ihn als `/ha-config` in den Origami-Container.
+
+#### Home Assistant in einem LXC
+
+```bash
+# Pfad direkt angeben
+bash install/ha-mount.sh --ctid <CTID> --path /pfad/zu/ha/config
+
+# oder den Mount-Punkt des HA-Containers automatisch erkennen
+bash install/ha-mount.sh --ctid <CTID> --ha-ctid <HA-CTID>
+```
+
+> Der Ordner muss im unprivilegierten Container für UID `100000` schreibbar sein. Das Skript warnt, wenn die Besitzrechte nicht passen. Bei einer privilegierten HA-Installation ist der Samba-Weg oft die einfachere Lösung.
+
+#### Zugriff prüfen
+
+Im Assistenten auf **Zugriff prüfen** klicken. Dort muss „Schreibzugriff auf `/config`“ stehen. Alternativ im Container:
+
+```bash
+pct exec <CTID> -- test -w /ha-config/configuration.yaml && echo "schreibbar"
+```
+
+### 3. Assistenten öffnen und ausfüllen
 
 `http://<container-ip>:8080` im Browser öffnen und den Setup-Code eingeben.
 
-1. **Verbinden** – HA-URL (z. B. `http://192.168.1.10:8123`) und Long-Lived Token eintragen.
-2. **Zuordnen** – Räume, Lichter, Temperatur-/Feuchte-/Fenster-Sensoren, Wetter, Kalender prüfen. Vorschläge kommen aus Bereichen und Geräteklassen; alles ist änderbar.
-3. **Installieren** – Optionen wählen, Plan ansehen, installieren. Der Assistent schreibt ein Backup, installiert Dateien und Plugins, legt Ressourcen, Helfer und das Dashboard an und prüft das Ergebnis.
-4. **Neustart** – Bubble Card Tools ist eine Integration; danach Home Assistant neu starten (Knopf im Assistenten).
+1. **Verbinden**
+   - HA-URL eintragen, z. B. `http://192.168.1.10:8123`
+   - Long-Lived Access Token einfügen
+   - Der Assistent prüft Verbindung, Version und Registries.
 
-### 3. Auf dem Handy
+2. **Zuordnen**
+   - Räume werden aus deinen Home-Assistant-Bereichen (Areas) vorgeschlagen.
+   - Pro Raum: Licht, Temperatur, Luftfeuchte, Fenster, Klima, Mediaplayer.
+   - Global: Wetter, Kalender, Lichtgruppe, TV, Lautsprecher.
+   - Alles ist änderbar; leere Felder werden einfach weggelassen.
 
-- Home-Assistant-Companion-App öffnen und den Server hinzufügen.
-- Profil → Theme **Origami** auswählen.
-- Dashboard **Origami** öffnen (Sidebar oder als Start-Dashboard in der Companion-App).
+3. **Installieren**
+   - Optionen wählen (Begrüßung, Wetter, Räume, Klima-Tabelle, Alle Räume, Menü, Lichter-Pop-up, Navigationsleiste).
+   - **Plan ansehen**: zeigt Karten, Helfer, Plugins, Dateien und fehlende Entitäten.
+   - **Installieren** startet den Job mit Live-Log.
+   - Danach: **Home Assistant neu starten** (wegen der Bubble-Card-Tools-Integration).
+
+4. **Prüfen**
+   - Der Assistent prüft Dateien, Dashboard und Ressourcen.
+   - Bei Problemen: **Nur prüfen**, **Rollback** oder Logs ansehen.
+
+### 4. Auf dem Handy einrichten
+
+1. Home-Assistant-Companion-App öffnen und den Server hinzufügen.
+2. **Profil → Theme → Origami** auswählen.
+3. Dashboard **Origami** öffnen (Sidebar oder als Start-Dashboard in der Companion-App).
+4. Optional: In der Companion-App das Origami-Dashboard als Startseite festlegen.
+
+> Das Theme wird pro Home-Assistant-Benutzer gewählt. Auf einem zweiten Handy also dort ebenfalls einmal `Origami` auswählen.
+
+---
+
+## Was genau installiert wird
+
+| Ort | Inhalt |
+| --- | --- |
+| `themes/origami.yaml` | Origami-Theme |
+| `www/fonts/` | Montserrat-Fonts und Stylesheet |
+| `bubble_card/modules/` | Origami-Bubble-Card-Module |
+| `www/origami/weather/` | Wetterbilder (Diorama und House) |
+| `www/community/<plugin>/` | Bubble Card, Origami Header, Notifications, Weather, Navbar Card |
+| `custom_components/bubble_card_tools/` | Bubble Card Tools (Integration, Neustart nötig) |
+| `configuration.yaml` | ergänzt `frontend.themes` und ggf. `frontend.extra_module_url` |
+| Lovelace-Ressourcen | Stylesheet + Plugin-Module |
+| Dashboard `Origami` | Pfad `/origami`, als Storage-Dashboard gespeichert |
+| Helfer | `input_boolean.all_rooms`, `input_boolean.climate_table` |
+
+Origami selbst wird **nicht mitgeliefert**. Der Container lädt beim Installieren den gepinnten Stand `V3.0` von GitHub. So bleibt die Lizenz sauber und du bekommst genau die Vorlagen, aus denen das Dashboard gebaut wird.
+
+Der Patch an `configuration.yaml` ist bewusst vorsichtig: Er ergänzt nur einen `frontend:`-Block bzw. fehlende Schlüssel. Steht dort bereits ein Inline-Wert (z. B. `frontend: !include frontend.yaml`), wird nichts geändert und der Assistent zeigt eine Warnung.
+
+---
+
+## Nach der Installation
+
+- **Nachträglich prüfen:** Im Assistenten **Nur prüfen**.
+- **Zurücksetzen:** **Rollback** entfernt Dashboard, Ressourcen und Helfer und stellt die gesicherten Dateien wieder her.
+- **Erneut installieren:** Der Assistent aktualisiert das bestehende Dashboard und legt vorhandene Ressourcen nicht doppelt an.
+- **Verlauf:** Die letzten Aktionen stehen in der Oberfläche.
+- **Backups:** liegen im Container unter `/opt/origami/data/backups`.
+- **Logs:** `pct exec <CTID> -- journalctl -u origami -f`
+
+Ein vollständiges Home-Assistant-Backup ersetzt das eingebaute Backup nicht. Vor größeren Änderungen trotzdem ein HA-Backup ziehen.
+
+---
 
 ## Manueller Modus (ohne Schreibzugriff)
 
-Im Assistenten lässt sich ein **Bundle** als `tar.gz` herunterladen. Es enthält Theme, Fonts, Module, Wetterbilder, ein `configuration.yaml`-Snippet, das fertige Dashboard-YAML und eine Schritt-für-Schritt-Anleitung. Damit kannst du alles über Samba, Studio Code Server oder SSH selbst nach `/config` kopieren.
+Im Assistenten lässt sich ein **Bundle** als `tar.gz` herunterladen. Es enthält:
 
-Das Bundle enthält Origami-Dateien und unterliegt damit der AGPL-3.0 (siehe unten).
+- Theme, Fonts, Bubble-Card-Module und Wetterbilder
+- ein `configuration.yaml`-Snippet
+- das fertige Dashboard-YAML
+- eine `README.txt` mit allen Schritten
+- `plugins.txt` mit den gepinnten Plugin-Versionen und Links
 
-## Was v0.1 bewusst nicht macht
+Damit kannst du alles über Samba, Studio Code Server oder SSH selbst nach `/config` kopieren. Das Bundle enthält Origami-Dateien und unterliegt damit der AGPL-3.0.
 
-- Keine Raum-Pop-ups, Musik-/TV-/Staubsauger-/Favoriten-Ansichten
-- Keine Szenen im Lichter-Pop-up (die Origami-Szenen heißen in jedem Haushalt anders)
-- Keine HACS-Abhängigkeit: Plugins werden direkt installiert
-- Kein Schreiben in Home Assistant, wenn `/config` nicht eingebunden ist
-- Kein automatisches Anlegen von Lovelace-Ressourcen per YAML – das läuft über die WebSocket-API
+---
 
-## Sicherheit
+## Grenzen von v0.1
 
-- Der Dienst läuft als root **innerhalb eines unprivilegierten LXC**. Das ist nötig, weil der eingebundene `/config`-Ordner auf dem Host der Container-Root-UID gehört; ein eigener Dienstbenutzer käme dort nicht an die Dateien. Der Container selbst hat keine Root-Rechte auf dem Proxmox-Host.
-- Der Long-Lived Token wird mit AES-256-GCM verschlüsselt in `data/state.json` abgelegt; der Schlüssel liegt in `data/secret.key` (Modus `0600`, Verzeichnis `0700`).
-- Die Weboberfläche ist mit einem Setup-Code geschützt (Session-Cookie, 12 h). Der Code steht in `/opt/origami/setup-code`.
-- Der Assistent lauscht im lokalen Netz; er sollte nicht direkt aus dem Internet erreichbar sein. Für Fernzugriff den Home-Assistant-Zugang oder ein VPN nutzen.
-- Vor jedem Schreiben wird ein Backup der betroffenen Dateien unter `data/backups` angelegt. Rollback ist im Assistenten möglich.
+- Keine Raum-Pop-ups: Ein Tipp auf eine Raumkarte öffnet den normalen Mehr-Info-Dialog.
+- Keine Musik-, TV-, Saugroboter-, Server- oder Favoriten-Ansichten.
+- Keine Szenen im Lichter-Pop-up, weil die Origami-Szenen in jedem Haushalt anders heißen.
+- Keine HACS-Abhängigkeit: Plugins werden direkt installiert.
+- Kein Schreiben in Home Assistant ohne eingebundenes `/config`.
+- Nur Proxmox-LXC als Installationsweg; Docker/Standalone ist noch nicht dabei.
+- Die Oberfläche ist für das lokale Netz gedacht, nicht für das offene Internet.
+
+---
+
+## Sicherheit und Datenschutz
+
+- Der Dienst läuft als **root innerhalb eines unprivilegierten LXC**. Das ist nötig, weil der eingebundene `/config`-Ordner auf dem Host der Container-Root-UID gehört. Der Container hat keine Root-Rechte auf dem Proxmox-Host.
+- Der Long-Lived Token wird mit **AES-256-GCM** verschlüsselt in `data/state.json` gespeichert; der Schlüssel liegt in `data/secret.key` (Modus `0600`, Verzeichnis `0700`).
+- Die Weboberfläche ist mit dem **Setup-Code** geschützt (signiertes Session-Cookie, 12 Stunden, Rate-Limit pro IP).
+- Der Token verlässt den Container nicht. Es gibt keine Cloud, keine Telemetrie und keinen externen Dienst außer GitHub/jsDelivr für die Plugin-Downloads.
+- Vor jedem Schreiben wird ein Backup der betroffenen Dateien angelegt.
+- Der Assistent sollte **nicht** direkt aus dem Internet erreichbar sein. Für Fernzugriff VPN oder den Home-Assistant-Zugang nutzen.
+
+---
+
+## Häufige Fragen
+
+**Brauche ich HACS?**
+Nein. Die Plugins werden direkt von GitHub/jsDelivr installiert und als Ressource eingetragen.
+
+**Wird meine Home-Assistant-Konfiguration überschrieben?**
+Nein. Es werden Dateien ergänzt und `configuration.yaml` vorsichtig gepatcht. Vorher entsteht ein Backup; Rollback ist eingebaut.
+
+**Warum ein eigener Container und kein Home-Assistant-Add-on?**
+Weil die Appliance auch für HAOS-VMs, HA-Container und HA-LXCs funktionieren soll und Dateien in `/config` schreiben muss. Ein Add-on gäbe es nur für HAOS.
+
+**Kann ich das Dashboard später anpassen?**
+Ja. Es ist ein normales Storage-Dashboard und lässt sich im Home-Assistant-Dashboard-Editor bearbeiten. Ein erneuter Lauf des Assistenten überschreibt es wieder.
+
+**Was passiert bei einem Origami-Update?**
+Der Installer ist auf `V3.0` gepinnt. Ein Update auf eine neue Origami-Version ist bewusst ein eigener Schritt, damit sich nichts unbemerkt ändert.
+
+**Kostet das etwas?**
+Nein. Das Projekt ist quelloffen; es fallen nur die Kosten für deinen Proxmox-Host an.
+
+**Kann ich es wieder entfernen?**
+Ja: Rollback im Assistenten, danach `pct stop <CTID> && pct destroy <CTID>`. Der HA-Mount kann in `/etc/fstab` entfernt werden.
+
+---
+
+## Fehlersuche
+
+Die ausführliche Sammlung steht in [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md). Die häufigsten Fälle:
+
+| Problem | Lösung |
+| --- | --- |
+| „Kein Schreibzugriff“ | `/config` einbinden (Schritt 2) und **Zugriff prüfen** |
+| 401 vom Token | Neuen Long-Lived Token mit Admin-Rechten erzeugen |
+| Dashboard leer / „Custom element doesn't exist“ | HA neu starten, Ressourcen prüfen, Seite hart neu laden |
+| Theme fehlt | Im Profil `Origami` auswählen; `frontend:`-Patch prüfen |
+| Dienst startet nicht | `pct exec <CTID> -- journalctl -u origami -n 80` |
+| Oberfläche nicht erreichbar | Container-IP und Port 8080 prüfen, Firewall auf dem Host |
+
+---
 
 ## Entwicklung
 
@@ -126,19 +284,25 @@ bash install/origami.sh --dry-run
 
 Die Tests brauchen kein Home Assistant. Der Vendor-Stand wird beim ersten Plan/Apply nach `app/data/vendor/origami-V3.0` geladen (nicht im Repo).
 
-Mehr Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) und [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+Mehr Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+---
 
 ## Mitmachen
 
-Issues und Pull Requests sind willkommen. Bitte halte dich an den vorhandenen Stil (deutsche UI-Texte, Node ESM, keine Build-Schritte im Frontend) und ergänze bei Verhaltensänderungen einen Test.
+Issues und Pull Requests sind willkommen. Bitte halte dich an den vorhandenen Stil (deutsche UI-Texte, Node ESM, kein Build-Schritt im Frontend) und ergänze bei Verhaltensänderungen einen Test.
+
+---
 
 ## Danke
 
-- [Origami](https://github.com/hazymorning/origami) von hazymorning – das Design, die Templates und die Module
+- [Origami](https://github.com/hazymorning/origami) von hazymorning – Design, Templates und Module
 - [Bubble Card](https://github.com/Clooos/Bubble-Card) und [Bubble Card Tools](https://github.com/Clooos/Bubble-Card-Tools) von Clooos
 - [Navbar Card](https://github.com/joseluis9595/lovelace-navbar-card) von joseluis9595
 - [Origami Header](https://github.com/hazymorning/origami_header), [Notifications](https://github.com/hazymorning/origami_notifications), [Weather](https://github.com/hazymorning/origami_weather)
 
+---
+
 ## Lizenz
 
-Der eigene Code steht unter AGPL-3.0-or-later. Das ist nötig, weil das erzeugte Dashboard und das Bundle aus Origami-Vorlagen abgeleitet sind, die unter AGPL-3.0 stehen. Siehe [LICENSE](LICENSE).
+Der eigene Code steht unter **AGPL-3.0-or-later**. Das ist nötig, weil das erzeugte Dashboard und das Bundle aus Origami-Vorlagen abgeleitet sind, die unter AGPL-3.0 stehen. Siehe [LICENSE](LICENSE).
