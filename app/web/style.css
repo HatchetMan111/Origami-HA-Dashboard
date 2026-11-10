@@ -100,6 +100,13 @@ body {
 
 .spacer { flex: 1; }
 
+@media (max-width: 560px) {
+  .hero { flex-wrap: wrap; gap: 12px; }
+  .hero h1 { font-size: 19px; }
+  .hero p { font-size: 12.5px; }
+  #status { width: 100%; }
+}
+
 .chip {
   display: inline-flex;
   align-items: center;
