@@ -100,15 +100,53 @@ Alle Optionen: `bash install/origami.sh --help`.
 #### HAOS (VM) – über das Samba-Add-on
 
 1. In Home Assistant: **Einstellungen → Add-ons → Add-on-Store → Samba share** installieren.
-2. Im Add-on einen Benutzer und ein Passwort setzen und den Ordner `config` freigeben.
-3. Auf dem Proxmox-Host:
+2. Im Add-on unter **Konfiguration**:
+   - `username` und `password` setzen – das sind **eigene Zugangsdaten für die Freigabe**, nicht dein HA-Login.
+   - `allow_hosts` muss die IP des Proxmox-Hosts enthalten. Der Standard (`192.168.0.0/16`, `10.0.0.0/8`, `172.16.0.0/12`) passt für die meisten Netze.
+3. Add-on **starten**. Im Log steht die entscheidende Zeile:
+
+   ```
+   Samba name server HOMEASSISTANT is now a local master browser ... on subnet 10.120.1.175
+   ```
+
+   Die IP dahinter (`10.120.1.175`) ist die Adresse deiner HAOS-VM. **Diese** IP gehört in den Mount – nicht die des Proxmox-Hosts. HAOS kann in einem anderen Subnetz als dein LAN liegen; Proxmox muss es erreichen können.
+
+4. Auf dem Proxmox-Host, interaktiv (empfohlen):
+
+```bash
+bash install/ha-mount.sh --ctid <CTID>
+```
+
+Das Skript sucht die HA-VM automatisch (QEMU-Guest-Agent), fragt IP, Share, Benutzer und Passwort ab und prüft am Ende den Schreibzugriff **im Container**.
+
+Oder alles in einer Zeile:
 
 ```bash
 bash install/ha-mount.sh --ctid <CTID> \
-  --smb '//<HA-IP>/config' --user <benutzer> --pass '<passwort>'
+  --smb '//10.120.1.175/config' --user homeassistant --pass '<passwort>'
 ```
 
-Das mountet den Share dauerhaft (inkl. `/etc/fstab`) und hängt ihn als `/ha-config` in den Origami-Container.
+Erwartete Ausgabe:
+
+```
+==> HA-IP automatisch erkannt: 10.120.1.175
+==> Mounte //10.120.1.175/config …
+==> Samba-Mount erfolgreich.
+==> Hänge /srv/origami/ha-config als mp0 in Container 112 …
+==> Starte Container 112 neu, damit er den Mount sieht …
+==> Schreibzugriff auf /ha-config bestätigt.
+```
+
+Das Skript mountet dauerhaft (inkl. `/etc/fstab`, `nofail`), hängt den Ordner als `/ha-config` in den Container und startet ihn bei Bedarf neu.
+
+**Wenn der Mount scheitert**, sagt das Skript jetzt, was zu tun ist:
+
+| Meldung | Ursache |
+| --- | --- |
+| `mount error(13): Permission denied` | Benutzer/Passwort falsch oder Proxmox-IP fehlt in `allow_hosts` |
+| `mount error(2)` | Share-Name falsch (Standard: `config`) |
+| `mount error(6)` / `No route to host` | Falsche HA-IP oder HA/Proxmox erreichen sich nicht |
+| Port 445 antwortet nicht | Samba-Add-on nicht gestartet oder falsche IP |
 
 #### Home Assistant in einem LXC
 
@@ -127,7 +165,7 @@ bash install/ha-mount.sh --ctid <CTID> --ha-ctid <HA-CTID>
 Im Assistenten auf **Zugriff prüfen** klicken. Dort muss „Schreibzugriff auf `/config`“ stehen. Alternativ im Container:
 
 ```bash
-pct exec <CTID> -- test -w /ha-config/configuration.yaml && echo "schreibbar"
+pct exec <CTID> -- bash -c 'touch /ha-config/.probe && rm /ha-config/.probe && echo "schreibbar"'
 ```
 
 ### 3. Assistenten öffnen und ausfüllen

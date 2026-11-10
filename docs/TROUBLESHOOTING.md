@@ -6,27 +6,42 @@ Der Container sieht Home Assistants `/config` nicht. Prüfe im Container:
 
 ```bash
 pct exec 120 -- ls -la /ha-config
-pct exec 120 -- cat /ha-config/configuration.yaml | head -5
+pct exec 120 -- bash -c 'touch /ha-config/.probe && rm /ha-config/.probe && echo WRITABLE'
 ```
 
-Fehlt der Ordner oder ist er leer:
+Fehlt der Ordner oder ist er leer, neu einbinden – am einfachsten interaktiv:
 
 ```bash
-# HAOS: Samba share Add-on aktiv, Share erreichbar
+bash install/ha-mount.sh --ctid 120
+```
+
+Das Skript erkennt die HAOS-VM automatisch, fragt IP, Share, Benutzer und Passwort ab, startet den Container bei Bedarf neu und prüft den Schreibzugriff im Container.
+
+Oder mit allen Werten:
+
+```bash
+# HAOS
 bash install/ha-mount.sh --ctid 120 \
-  --smb '//192.168.1.10/config' --user homeassistant --pass 'dein-passwort'
+  --smb '//10.120.1.175/config' --user homeassistant --pass 'dein-passwort'
 
 # Home Assistant in einem LXC
 bash install/ha-mount.sh --ctid 120 --ha-ctid 105
 ```
 
-Danach im Assistenten **Zugriff prüfen**.
+Die **HA-IP** steht im Log des Samba-Add-ons:
+
+```
+Samba name server HOMEASSISTANT is now a local master browser ... on subnet 10.120.1.175
+```
+
+Das ist die HAOS-VM, nicht der Proxmox-Host. Liegt HA in einem anderen Subnetz, muss der Host dorthin routen können.
 
 Häufige Ursachen:
 
-- Samba-Add-on aus, falscher Share-Name oder falsches Passwort
-- HA-IP falsch oder Port 445 blockiert
-- Der Mount existiert, ist aber nach einem Host-Reboot weg → `mount -a` bzw. `/etc/fstab` prüfen
+- Samba-Add-on aus, falscher Share-Name (`config`), falscher Benutzer oder falsches Passwort
+- Proxmox-IP fehlt in `allow_hosts` des Add-ons → `mount error(13): Permission denied`
+- HA-IP falsch oder Port 445 blockiert → `mount error(6)` bzw. „No route to host“
+- Der Mount existiert, ist aber nach einem Host-Reboot weg → `mount -a` bzw. `/etc/fstab` prüfen (das Skript schreibt `nofail` mit)
 - Der Ordner ist beschreibbar, enthält aber keine `configuration.yaml` → falscher Pfad
 
 ## 401 vom Token
