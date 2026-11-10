@@ -418,10 +418,10 @@ msg "Storage: Container=${STORAGE}, Templates=${TEMPLATE_STORAGE}"
 TMPL=$(ensure_template "$TEMPLATE_STORAGE")
 [[ -n $TMPL ]] || die "No template found."
 
-# 48 bits of entropy. The code guards a LAN-only setup UI, but 8 hex chars
-# (32 bits) is too little for a public appliance.
+# 48 bits of entropy (12 hex chars). The code guards a LAN-only setup UI, but
+# 8 hex chars (32 bits) would be too little for a public appliance.
 SETUP_CODE=$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n' | tr 'a-f' 'A-F')
-[[ ${#SETUP_CODE} -eq 8 ]] || die "Konnte keinen Setup-Code erzeugen."
+[[ ${#SETUP_CODE} -eq 12 ]] || die "Konnte keinen Setup-Code erzeugen."
 
 msg "Creating container $CTID …"
 create_ct "$CTID" "$TMPL" "$STORAGE"
