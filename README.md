@@ -37,7 +37,7 @@ Origami selbst wird **nicht** mitgeliefert. Der Container lädt beim Installiere
 Auf dem **Proxmox-Host** als root:
 
 ```bash
-git clone https://github.com/HatchetMan111/Origami-Proxmox.git
+git clone https://github.com/HatchetMan111/Origami-HA-Dashboard.git
 cd Origami-Proxmox
 bash install/origami.sh
 ```

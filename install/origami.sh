@@ -3,7 +3,7 @@
 # Usage: bash install/origami.sh [options]
 set -euo pipefail
 
-REPO="${ORIGAMI_LXC_REPO:-HatchetMan111/Origami-Proxmox}"
+REPO="${ORIGAMI_LXC_REPO:-HatchetMan111/Origami-HA-Dashboard}"
 REF="${ORIGAMI_LXC_REF:-main}"
 
 CTID=""
