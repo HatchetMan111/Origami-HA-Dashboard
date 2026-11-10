@@ -115,12 +115,14 @@ function buildDict(mapping) {
 
 function buildGreeting(dict, ctx) {
   let card = mapTree(parse(readPart("dashboard/greeting/card.yaml")), dict);
+  if (!Array.isArray(card.cards) || !card.cards.length) return card;
   if (!ctx.options.notifications) {
     card.cards = [card.cards[0]];
     card.columns = 1;
     return card;
   }
   const island = card.cards[1];
+  if (!island) return card;
   if (!dict["weather.home"]) delete island.weather;
   island.entities = (island.entities || []).filter((entry) => {
     const id = typeof entry === "string" ? entry : entry?.entity;
@@ -157,6 +159,7 @@ function buildRoomsHeader(dict, ctx) {
   text = replaceIdList(text, "binary_sensor.living_room_window", windows);
 
   let card = mapTree(parse(text), dict);
+  card.sub_button = card.sub_button || {};
   card.sub_button.main = pruneButtons(card.sub_button?.main || [], ctx).filter((item) => {
     if (item.name === "Temperature") return temps.length > 0;
     if (item.name === "Windows") return windows.length > 0;
@@ -184,6 +187,7 @@ function buildRoomCard(room, dict, ctx) {
     ...card.button_action,
     tap_action: { action: "more-info" },
   };
+  card.sub_button = card.sub_button || {};
   card.sub_button.main = pruneButtons(card.sub_button?.main || [], ctx);
   card.sub_button.bottom = pruneButtons(card.sub_button?.bottom || [], ctx);
   return card;

@@ -144,7 +144,7 @@ function authView() {
       <code class="inline">cat /opt/origami/setup-code</code></p>
     <form data-form="login">
       <label class="field"><span>Setup-Code</span>
-        <input type="text" name="code" autocomplete="one-time-code" autocapitalize="characters" placeholder="z. B. 7K3M9Q2A4B6C" required autofocus />
+        <input type="text" name="code" autocomplete="one-time-code" autocapitalize="characters" placeholder="z. B. 7A3F91C2B45D" required autofocus />
       </label>
       <div class="row mt"><button class="primary" type="submit">Entsperren</button></div>
     </form>
@@ -365,13 +365,16 @@ async function boot() {
   try {
     const session = await api("/api/session");
     absorb(session);
+    S.view = "connect";
+    render();
     if (session.connected) {
-      S.view = "connect";
-      render();
-      await discover(true);
-    } else {
-      S.view = "connect";
-      render();
+      // If Home Assistant is unreachable right now, stay on the connect view
+      // instead of replacing it with a dead end.
+      try {
+        await discover(true);
+      } catch (error) {
+        toast(error.message, true);
+      }
     }
   } catch (error) {
     if (error.status === 401) {
@@ -424,8 +427,23 @@ function appendLog(entry) {
 }
 
 function streamJob(jobId, onDone) {
+  let finished = false;
+  let seenLogs = 0;
+  const finish = async (payload) => {
+    if (finished) return;
+    finished = true;
+    S.job = { ...(S.job || {}), status: payload.status, result: payload.result, error: payload.error };
+    if (onDone) {
+      try {
+        await onDone(payload);
+      } catch (error) {
+        toast(error.message, true);
+      }
+    }
+  };
   const source = new EventSource(`/api/job/${jobId}/events`);
   source.onmessage = (event) => {
+    seenLogs += 1;
     try {
       appendLog(JSON.parse(event.data));
     } catch {
@@ -440,12 +458,44 @@ function streamJob(jobId, onDone) {
     } catch {
       /* ignore */
     }
-    S.job = { ...(S.job || {}), status: payload.status, result: payload.result, error: payload.error };
-    if (onDone) await onDone(payload);
+    await finish(payload);
   });
+  // If the stream drops mid-job (network blip, service restart), fall back to
+  // polling so the UI does not freeze on "läuft".
   source.onerror = () => {
     source.close();
+    if (finished) return;
+    (async () => {
+      while (!finished) {
+        try {
+          const { job } = await api(`/api/job/${jobId}`);
+          const logs = job.logs || [];
+          for (const entry of logs.slice(seenLogs)) appendLog(entry);
+          seenLogs = Math.max(seenLogs, logs.length);
+          if (job.status !== "running") {
+            await finish({ status: job.status, result: job.result, error: job.error });
+            return;
+          }
+        } catch (error) {
+          if (error.status === 404) {
+            await finish({ status: "error", error: "Verbindung zum Job verloren. Bitte Status aktualisieren." });
+          }
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+    })();
   };
+}
+
+function jobFailed(error) {
+  S.job = {
+    status: "error",
+    error: error.message,
+    logs: [{ at: Date.now(), level: "error", message: error.message }],
+  };
+  render();
+  toast(error.message, true);
 }
 
 async function startApply() {
@@ -453,7 +503,13 @@ async function startApply() {
   S.job = { status: "running", logs: [] };
   S.checks = [];
   render();
-  const { job } = await api("/api/apply", { method: "POST", body: {} });
+  let job;
+  try {
+    ({ job } = await api("/api/apply", { method: "POST", body: {} }));
+  } catch (error) {
+    jobFailed(error);
+    return;
+  }
   streamJob(job.id, async (payload) => {
     const session = await api("/api/session");
     absorb(session);
@@ -467,7 +523,13 @@ async function restart() {
   if (!confirm("Home Assistant jetzt neu starten? Das dauert meist 30–90 Sekunden.")) return;
   S.job = { status: "running", logs: [] };
   render();
-  const { job } = await api("/api/restart", { method: "POST", body: {} });
+  let job;
+  try {
+    ({ job } = await api("/api/restart", { method: "POST", body: {} }));
+  } catch (error) {
+    jobFailed(error);
+    return;
+  }
   streamJob(job.id, async (payload) => {
     if (payload.error) toast(payload.error, true);
     else toast("Home Assistant ist wieder da.");
@@ -488,7 +550,13 @@ async function rollback() {
   S.view = "apply";
   S.job = { status: "running", logs: [] };
   render();
-  const { job } = await api("/api/rollback", { method: "POST", body: {} });
+  let job;
+  try {
+    ({ job } = await api("/api/rollback", { method: "POST", body: {} }));
+  } catch (error) {
+    jobFailed(error);
+    return;
+  }
   streamJob(job.id, async () => {
     const session = await api("/api/session");
     absorb(session);
@@ -572,7 +640,8 @@ document.addEventListener("submit", async (event) => {
       const data = new FormData(form);
       const result = await api("/api/connect", { method: "POST", body: { url: data.get("url"), token: data.get("token") } });
       S.access = result.access;
-      S.session = { ...S.session, connected: { ...result.ha, url: data.get("url") } };
+      // result.ha.url is the normalized URL (scheme added, trailing slash off).
+      S.session = { ...S.session, connected: { ...result.ha } };
       S.connected = true;
       S.view = "connect";
       render();

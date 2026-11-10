@@ -96,7 +96,11 @@ export function installFiles(log = () => {}, options = {}) {
         created.push(`www/origami/weather/${folder}`);
       }
     }
-    fs.copyFileSync(path.join(vendor, "LICENSE"), path.join(HA_CONFIG, "www", "origami", "LICENSE"));
+    const license = path.join(vendor, "LICENSE");
+    if (fs.existsSync(license)) {
+      fs.mkdirSync(path.join(HA_CONFIG, "www", "origami"), { recursive: true });
+      fs.copyFileSync(license, path.join(HA_CONFIG, "www", "origami", "LICENSE"));
+    }
   }
 
   log(`Dateien installiert: ${created.length} Bereiche.`);
@@ -419,6 +423,8 @@ export async function buildBundle(dashboard, options, outFile) {
   fs.cpSync(path.join(vendorPath(), "www", "fonts"), path.join(dir, "www", "fonts"), { recursive: true });
   fs.cpSync(path.join(vendorPath(), "bubble_card", "modules"), path.join(dir, "bubble_card", "modules"), { recursive: true });
   fs.cpSync(path.join(vendorPath(), "dashboard", "weather"), path.join(dir, "www", "origami", "weather"), { recursive: true });
+  const vendorLicense = path.join(vendorPath(), "LICENSE");
+  if (fs.existsSync(vendorLicense)) fs.copyFileSync(vendorLicense, path.join(dir, "LICENSE"));
   const extraModuleUrls = [];
   if (options?.menu) {
     const header = pluginByKey("origami-header");
