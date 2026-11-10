@@ -83,6 +83,14 @@ bash install/origami.sh --id 120 --ip 192.168.1.50/24 --gw 192.168.1.1
 bash install/origami.sh --dry-run
 ```
 
+**Host prüfen, wenn der Container nicht erstellt wird:**
+
+```bash
+bash install/origami.sh --check
+```
+
+Das zeigt Storages, Templates, Bridges und die nächste freie ID, ohne etwas zu verändern. Details: [Fehlersuche](#fehlersuche).
+
 Alle Optionen: `bash install/origami.sh --help`.
 
 > `--ha-config /pfad/zu/config` kannst du direkt mitgeben, wenn der Ordner auf dem Host schon **dauerhaft** gemountet ist. Für HAOS ist der Samba-Weg im nächsten Schritt meist einfacher.
@@ -260,6 +268,9 @@ Die ausführliche Sammlung steht in [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTI
 
 | Problem | Lösung |
 | --- | --- |
+| Kein Container nach der Bestätigung | `bash install/origami.sh --check`, dann die Fehlermeldung von `pct create` prüfen |
+| „ID … is already used“ | ID gehört zu einer VM (z. B. HAOS); nächste freie ID nehmen oder `--id` setzen |
+| „Bridge … does not exist“ | `--bridge vmbr1` (o. ä.) mitgeben; `--check` listet die Bridges |
 | „Kein Schreibzugriff“ | `/config` einbinden (Schritt 2) und **Zugriff prüfen** |
 | 401 vom Token | Neuen Long-Lived Token mit Admin-Rechten erzeugen |
 | Dashboard leer / „Custom element doesn't exist“ | HA neu starten, Ressourcen prüfen, Seite hart neu laden |

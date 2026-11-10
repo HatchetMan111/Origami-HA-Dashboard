@@ -56,6 +56,41 @@ Schlägt ein Plugin fehl, steht das im Apply-Log als Warnung; der Rest wird trot
 - `configuration.yaml` muss `frontend: themes: !include_dir_merge_named themes` enthalten. Der Assistent patcht das nur, wenn kein Inline-`frontend:`-Wert existiert; andernfalls steht eine Warnung im Plan.
 - Nach dem Patch Home Assistant neu starten bzw. Themes neu laden.
 
+## Der Container wird nicht erstellt
+
+Zuerst die Umgebung prüfen – das ändert nichts:
+
+```bash
+bash install/origami.sh --check
+```
+
+Die Ausgabe zeigt `pct`/`pveam`/`pvesm`, alle Storages mit Inhaltstyp, das gewählte Rootfs, die Template-Storage, vorhandene Bridges und die nächste freie ID. Damit lässt sich fast jeder Abbruch vor `pct create` zuordnen.
+
+**„ID … is already used by a VM or container“**
+Proxmox vergibt VMIDs an VMs und Container gemeinsam. `pct status 100` meldet „does not exist“, wenn 100 eine **VM** ist (z. B. die HAOS-VM). Der Installer erkennt das jetzt und nimmt automatisch die nächste freie ID; alternativ `--id 120` angeben.
+
+**„Bridge … does not exist“**
+Ohne `--bridge` wählt der Installer `vmbr0`, falls vorhanden, sonst die erste gefundene Bridge. Heißt deine Bridge anders:
+
+```bash
+bash install/origami.sh --bridge vmbr1
+```
+
+**„pct create failed“**
+Die Meldung von Proxmox steht direkt darüber. Häufig: Storage voll, `local-lvm` ohne freien Platz, oder das Template passt nicht zum Storage. Prüfe danach:
+
+```bash
+pct create ...        # exakt die Zeile aus der Fehlermeldung erneut ausführen
+pvesm status
+```
+
+**Gar keine Ausgabe nach der Bestätigung?**
+Dann fehlt die Bestätigung (`y` + Enter) oder die Ausgabe wurde nicht mitgeschnitten. Immer vollständig ausführen und die letzten Zeilen kopieren:
+
+```bash
+bash install/origami.sh 2>&1 | tee /tmp/origami-install.log
+```
+
 ## Dienst startet nicht
 
 ```bash

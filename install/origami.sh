@@ -14,12 +14,14 @@ DISK=8
 STORAGE=""
 TEMPLATE_STORAGE="${TEMPLATE_STORAGE:-}"
 BRIDGE="vmbr0"
+BRIDGE_SET=0
 IP="dhcp"
 GATEWAY=""
 HA_CONFIG=""
 PORT=8080
 DRY_RUN=0
 ASSUME_YES=0
+CHECK=0
 NODE_MAJOR=22
 
 C_G=$'\033[32m'; C_Y=$'\033[33m'; C_R=$'\033[31m'; C_B=$'\033[1m'; C_0=$'\033[0m'
@@ -49,6 +51,7 @@ ${C_B}Origami-LXC${C_0} – Origami dashboard setup appliance for Home Assistant
   --ha-config <path>    host path with Home Assistant's /config (bind mount)
   --port <n>            web port inside the container (default: 8080)
   --dry-run             print what would happen, change nothing
+  --check               only show host storage/template diagnostics, then exit
   --yes                 do not ask for confirmation
   -h, --help            this text
 
@@ -66,8 +69,31 @@ check_host() {
 
 next_id() {
   local id=100
-  while pct status "$id" >/dev/null 2>&1; do id=$((id + 1)); done
+  while id_in_use "$id"; do id=$((id + 1)); done
   printf '%s' "$id"
+}
+
+id_in_use() {
+  local id=$1
+  pct status "$id" >/dev/null 2>&1 && return 0
+  command -v qm >/dev/null 2>&1 && qm status "$id" >/dev/null 2>&1 && return 0
+  compgen -G "/etc/pve/nodes/*/qemu/${id}.conf" >/dev/null && return 0
+  compgen -G "/etc/pve/nodes/*/lxc/${id}.conf" >/dev/null && return 0
+  return 1
+}
+
+pick_bridge() {
+  local bridges
+  bridges=$(ip -o link show type bridge 2>/dev/null | awk -F': ' '{print $2}' | cut -d@ -f1 | sort -u || true)
+  if [[ -n $bridges ]] && grep -qx 'vmbr0' <<<"$bridges"; then
+    printf 'vmbr0'
+    return
+  fi
+  if [[ -n $bridges ]]; then
+    printf '%s\n' "$bridges" | sed -n '1p'
+    return
+  fi
+  printf 'vmbr0'
 }
 
 pick_storage() {
@@ -158,9 +184,21 @@ create_ct() {
 
   if [[ $DRY_RUN -eq 1 ]]; then
     printf '  pct %s\n' "${args[*]}"
-  else
-    pct "${args[@]}" >/dev/null
+    return
   fi
+
+  msg "Running: pct create $id …"
+  local out
+  if ! out=$(pct "${args[@]}" 2>&1); then
+    [[ -n $out ]] && printf '%s\n' "$out" >&2
+    die "pct create failed (see the message above). Nothing was created."
+  fi
+  [[ -n $out ]] && printf '%s\n' "$out"
+
+  if ! pct config "$id" >/dev/null 2>&1; then
+    die "pct create reported success, but container $id does not exist. Check the Proxmox task log."
+  fi
+  msg "Container $CTID created."
 }
 
 wait_for_ct() {
@@ -228,6 +266,38 @@ health_check() {
   die "The service did not answer. See: pct exec $id -- journalctl -u origami -e"
 }
 
+doctor() {
+  msg "Proxmox host"
+  local bin
+  for bin in pct pveam pvesm; do
+    printf '  %-8s %s\n' "$bin" "$(command -v "$bin" 2>/dev/null || echo MISSING)"
+  done
+  printf '  %-8s %s\n' "version" "$(pveversion 2>/dev/null || echo unknown)"
+
+  msg "Storage (pvesm status)"
+  pvesm status 2>&1 | sed 's/^/  /' || true
+
+  local rootdir vztmpl
+  rootdir=$(pvesm status --content rootdir 2>/dev/null | awk 'NR > 1 {print $1}' | paste -sd, - || true)
+  vztmpl=$(pvesm status --content vztmpl 2>/dev/null | awk 'NR > 1 {print $1}' | paste -sd, - || true)
+  printf '  rootdir storages : %s\n' "${rootdir:-none}"
+  printf '  vztmpl storages  : %s\n' "${vztmpl:-none}"
+  printf '  chosen rootfs    : %s\n' "$(pick_storage)"
+  printf '  chosen templates : %s\n' "$(pick_template_storage)"
+
+  msg "LXC templates"
+  pveam list "$(pick_template_storage)" 2>&1 | sed 's/^/  /' || true
+
+  msg "Network"
+  ip -o link show type bridge 2>/dev/null | awk -F': ' '{print "  " $2}' | cut -d@ -f1 || true
+  printf '  chosen bridge    : %s\n' "$([[ $BRIDGE_SET -eq 1 ]] && printf '%s' "$BRIDGE" || pick_bridge)"
+
+  msg "Next container id: $(next_id)"
+  [[ -n $HA_CONFIG ]] && printf '  HA config path   : %s\n' "$HA_CONFIG"
+
+  msg "Ready. Re-run without --check to install."
+}
+
 # ---------------------------------------------------------------- arguments
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -235,7 +305,7 @@ while [[ $# -gt 0 ]]; do
     --hostname) CT_HOSTNAME=${2:?}; shift 2 ;;
     --ip) IP=${2:?}; shift 2 ;;
     --gw) GATEWAY=${2:?}; shift 2 ;;
-    --bridge) BRIDGE=${2:?}; shift 2 ;;
+    --bridge) BRIDGE=${2:?}; BRIDGE_SET=1; shift 2 ;;
     --cores) CORES=${2:?}; shift 2 ;;
     --ram) RAM=${2:?}; shift 2 ;;
     --disk) DISK=${2:?}; shift 2 ;;
@@ -244,6 +314,7 @@ while [[ $# -gt 0 ]]; do
     --ha-config) HA_CONFIG=${2:?}; shift 2 ;;
     --port) PORT=${2:?}; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
+    --check) CHECK=1; shift ;;
     --yes|-y) ASSUME_YES=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "Unknown option: $1 (see --help)" ;;
@@ -254,13 +325,24 @@ done
 need_root
 check_host
 
+if [[ $CHECK -eq 1 ]]; then
+  doctor
+  exit 0
+fi
+
+[[ $BRIDGE_SET -eq 1 ]] || BRIDGE=$(pick_bridge)
+
 [[ -z $CTID ]] && CTID=$(next_id)
 [[ $CTID =~ ^[0-9]+$ ]] || die "--id must be a number."
 [[ $DISK -ge 4 ]] || die "--disk must be at least 4 GB."
 [[ $RAM -ge 1024 ]] || die "--ram must be at least 1024 MB."
 
-if pct status "$CTID" >/dev/null 2>&1; then
-  die "Container $CTID already exists. Pick another --id."
+if id_in_use "$CTID"; then
+  die "ID $CTID is already used by a VM or container. Pick another --id (e.g. --id 101)."
+fi
+
+if ! ip link show "$BRIDGE" >/dev/null 2>&1; then
+  die "Bridge '$BRIDGE' does not exist. Available: $(ip -o link show type bridge 2>/dev/null | awk -F': ' '{print $2}' | cut -d@ -f1 | paste -sd' ' - || echo none). Use --bridge <name>."
 fi
 
 if [[ -n $HA_CONFIG && ! -d $HA_CONFIG ]]; then
@@ -329,7 +411,7 @@ ${C_G}Done.${C_0}
     2. For themes, fonts and plugins the container needs write access to
        Home Assistant's /config. If the wizard says "read-only", run on the host:
 
-         bash install/ha-mount.sh --ctid ${CTID} \
+         bash install/ha-mount.sh --ctid ${CTID} \\
            --smb '//192.168.1.10/config' --user ha --pass 'secret'
 
        (HAOS: enable the "Samba share" add-on; user/pass are the add-on's.)
