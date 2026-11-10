@@ -1,0 +1,19 @@
+{
+  "name": "origami-lxc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Setup appliance that installs the Origami dashboard into an existing Home Assistant",
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node --test test/unit/*.test.js test/smoke/*.test.js",
+    "check": "node --check server/index.js"
+  },
+  "dependencies": {
+    "yaml": "^2.8.1"
+  }
+}

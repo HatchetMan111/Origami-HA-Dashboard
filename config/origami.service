@@ -1,0 +1,27 @@
+[Unit]
+Description=Origami setup for Home Assistant
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=origami
+Group=origami
+WorkingDirectory=/opt/origami/app
+ExecStart=/usr/local/bin/node server/index.js
+Environment=NODE_ENV=production
+Environment=PORT=8080
+Environment=DATA_DIR=/opt/origami/data
+Environment=HA_CONFIG=/ha-config
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/origami/data /ha-config
+# Needed for the loopback health check only
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target
