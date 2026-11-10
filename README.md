@@ -275,7 +275,7 @@ cd ~/Origami-HA-Dashboard
 git pull
 
 # App + Skripte in den Container bringen
-tar czf /tmp/origami-update.tgz app scripts
+tar czf /tmp/origami-update.tgz --exclude=app/node_modules --exclude=app/data --exclude=app/test app scripts
 pct push <CTID> /tmp/origami-update.tgz /root/origami-update.tgz
 pct exec <CTID> -- tar xzf /root/origami-update.tgz -C /opt/origami
 
