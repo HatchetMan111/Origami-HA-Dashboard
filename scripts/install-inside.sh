@@ -7,6 +7,7 @@ SETUP_CODE="${2:-}"
 NODE_MAJOR="${3:-22}"
 
 export DEBIAN_FRONTEND=noninteractive
+export LC_ALL=C LANG=C
 msg() { printf '\033[32m==>\033[0m %s\n' "$*"; }
 
 msg "Installing base packages …"
@@ -21,7 +22,12 @@ case $arch in
   *) echo "Unsupported architecture: $arch" >&2; exit 1 ;;
 esac
 
-if ! command -v node >/dev/null 2>&1 || [[ $(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0) -lt $NODE_MAJOR ]]; then
+node_bin=""
+if command -v node >/dev/null 2>&1 && [[ $(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0) -ge $NODE_MAJOR ]]; then
+  node_bin=$(command -v node)
+fi
+
+if [[ -z $node_bin ]]; then
   msg "Installing Node.js ${NODE_MAJOR} …"
   sums=$(curl -fsSL "https://nodejs.org/dist/latest-v${NODE_MAJOR}.x/SHASUMS256.txt")
   file=$(printf '%s\n' "$sums" | awk -v a="linux-${node_arch}.tar.xz" '$2 ~ a"$" {print $2; exit}' || true)
@@ -30,15 +36,44 @@ if ! command -v node >/dev/null 2>&1 || [[ $(node -p 'process.versions.node.spli
   curl -fsSL "https://nodejs.org/dist/latest-v${NODE_MAJOR}.x/${file}" -o "$tmp/node.tar.xz"
   mkdir -p /usr/local/lib/nodejs
   tar xJf "$tmp/node.tar.xz" -C /usr/local/lib/nodejs
-  dir=$(find /usr/local/lib/nodejs -maxdepth 1 -type d -name 'node-v*' | sed -n '1p')
-  ln -sf "$dir/bin/node" /usr/local/bin/node
-  ln -sf "$dir/bin/npm" /usr/local/bin/npm
-  ln -sf "$dir/bin/npx" /usr/local/bin/npx
+  dir=$(find /usr/local/lib/nodejs -maxdepth 1 -type d -name 'node-v*' | sort | tail -n 1)
   rm -rf "$tmp"
+
+  if [[ -z $dir || ! -x $dir/bin/node ]]; then
+    echo "Node.js archive was downloaded but no binary was found." >&2
+    ls -la /usr/local/lib/nodejs >&2 || true
+    echo "PATH=$PATH" >&2
+    exit 1
+  fi
+
+  install -d -m 0755 /usr/local/bin
+  ln -sfn "$dir/bin/node" /usr/local/bin/node
+  ln -sfn "$dir/bin/npm"  /usr/local/bin/npm
+  ln -sfn "$dir/bin/npx"  /usr/local/bin/npx
+  printf 'export PATH="/usr/local/bin:$PATH"\n' > /etc/profile.d/node.sh
+  chmod 0644 /etc/profile.d/node.sh
+  node_bin="$dir/bin/node"
 fi
 
-node -v
-npm -v
+export PATH="/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
+hash -r
+
+# Use absolute paths: pct exec does not always export /usr/local/bin.
+"$node_bin" -v || { echo "Node.js is not runnable at $node_bin (PATH=$PATH)" >&2; exit 1; }
+npm_bin="$(dirname "$node_bin")/npm"
+"$npm_bin" -v
+
+if [[ ! -x /usr/local/bin/node ]]; then
+  install -d -m 0755 /usr/local/bin
+  ln -sfn "$node_bin" /usr/local/bin/node
+fi
+if [[ ! -x /usr/local/bin/npm ]]; then
+  ln -sfn "$npm_bin" /usr/local/bin/npm
+fi
+if [[ ! -x /usr/local/bin/node ]]; then
+  echo "/usr/local/bin/node is missing; the systemd unit would fail." >&2
+  exit 1
+fi
 
 msg "Installing the app …"
 install -d -m 0755 /opt/origami/app /opt/origami/data
@@ -47,7 +82,7 @@ mkdir -p /ha-config
 tar xzf /root/origami-app.tgz -C /opt/origami/app
 
 cd /opt/origami/app
-npm install --omit=dev --no-audit --no-fund --loglevel=error
+"$npm_bin" install --omit=dev --no-audit --no-fund --loglevel=error
 
 if [[ -n $SETUP_CODE ]]; then
   printf '%s\n' "$SETUP_CODE" > /opt/origami/setup-code

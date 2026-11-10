@@ -56,6 +56,27 @@ Schlägt ein Plugin fehl, steht das im Apply-Log als Warnung; der Rest wird trot
 - `configuration.yaml` muss `frontend: themes: !include_dir_merge_named themes` enthalten. Der Assistent patcht das nur, wenn kein Inline-`frontend:`-Wert existiert; andernfalls steht eine Warnung im Plan.
 - Nach dem Patch Home Assistant neu starten bzw. Themes neu laden.
 
+## Node.js wird im Container nicht gefunden
+
+Symptom: `install-inside.sh: line 40: node: command not found` direkt nach „Installing Node.js 22 …“.
+
+Ursache war, dass der Installer `node` nur über `PATH` aufrief. `pct exec` vererbt nicht in jedem Fall `/usr/local/bin`. Ab Version `8f5aa65` (Fix in `scripts/install-inside.sh`) werden Node und npm über absolute Pfade aufgerufen, `/usr/local/bin/node` wird geprüft und `/etc/profile.d/node.sh` gesetzt.
+
+Prüfen im Container:
+
+```bash
+pct exec 112 -- bash -c 'echo "PATH=$PATH"; ls -l /usr/local/bin/node; /usr/local/lib/nodejs/*/bin/node -v'
+```
+
+Fehlt der Symlink, neu setzen:
+
+```bash
+pct exec 112 -- bash -c 'ln -sfn /usr/local/lib/nodejs/*/bin/node /usr/local/bin/node'
+pct exec 112 -- bash -c 'ln -sfn /usr/local/lib/nodejs/*/bin/npm /usr/local/bin/npm'
+```
+
+Danach die Installation erneut starten (siehe oben).
+
 ## Der Container wird nicht erstellt
 
 Zuerst die Umgebung prüfen – das ändert nichts:
