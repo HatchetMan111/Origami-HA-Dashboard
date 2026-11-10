@@ -22,11 +22,14 @@ PORT=8080
 DRY_RUN=0
 ASSUME_YES=0
 CHECK=0
+PAYLOAD=""
+NODE_TARBALL=""
 NODE_MAJOR=22
 
 C_G=$'\033[32m'; C_Y=$'\033[33m'; C_R=$'\033[31m'; C_B=$'\033[1m'; C_0=$'\033[0m'
 
-trap 'printf "%s\n" "${C_R}xx ${C_0}Unerwarteter Fehler (Exit $?) in Zeile $LINENO: $BASH_COMMAND" >&2' ERR
+# shellcheck disable=SC2154  # rc is assigned inside the trap
+trap 'rc=$?; rm -f "${PAYLOAD:-}" "${NODE_TARBALL:-}"; printf "%s\n" "${C_R}xx ${C_0}Unerwarteter Fehler (Exit $rc) in Zeile $LINENO: $BASH_COMMAND" >&2' ERR
 
 msg()  { printf '%s\n' "${C_G}==>${C_0} ${C_B}$*${C_0}"; }
 warn() { printf '%s\n' "${C_Y}!! ${C_0}$*"; }
@@ -206,7 +209,7 @@ wait_for_ct() {
   msg "Waiting for container networking …"
   for _ in $(seq 1 60); do
     if pct exec "$id" -- getent hosts github.com >/dev/null 2>&1; then
-      pct exec "$id" -- bash -c 'command -v curl >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq curl ca-certificates tar gzip xz-utils >/dev/null)'
+      pct exec "$id" -- bash -c 'command -v curl >/dev/null 2>&1 || (apt-get update -qq -o Acquire::Retries=3 && apt-get install -y -qq -o Acquire::Retries=3 curl ca-certificates tar gzip xz-utils >/dev/null)'
       return 0
     fi
     sleep 2
@@ -244,13 +247,56 @@ prepare_payload() {
   fi
 }
 
+prepare_node_tarball() {
+  NODE_TARBALL=""
+  local node_arch file sums want got
+  case $(uname -m) in
+    x86_64|amd64) node_arch=x64 ;;
+    aarch64|arm64) node_arch=arm64 ;;
+    *) warn "Unknown host architecture; the container will download Node.js itself."; return 0 ;;
+  esac
+
+  msg "Preparing Node.js ${NODE_MAJOR} on the host …"
+  if ! sums=$(curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors \
+      "https://nodejs.org/dist/latest-v${NODE_MAJOR}.x/SHASUMS256.txt"); then
+    warn "Cannot reach nodejs.org from the host; the container will try itself."
+    return 0
+  fi
+
+  file=$(printf '%s\n' "$sums" | awk -v a="linux-${node_arch}.tar.xz" '$2 ~ a"$" {print $2; exit}' || true)
+  if [[ -z $file ]]; then
+    warn "No Node.js tarball for linux-${node_arch}; the container will try itself."
+    return 0
+  fi
+
+  NODE_TARBALL=$(mktemp /tmp/origami-node.XXXXXX.tar.xz)
+  if ! curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors --connect-timeout 15 \
+      "https://nodejs.org/dist/latest-v${NODE_MAJOR}.x/${file}" -o "$NODE_TARBALL"; then
+    warn "Node.js download failed on the host; the container will try itself."
+    rm -f "$NODE_TARBALL"; NODE_TARBALL=""
+    return 0
+  fi
+
+  want=$(printf '%s\n' "$sums" | awk -v f="$file" '$2 == f {print $1; exit}')
+  got=$(sha256sum "$NODE_TARBALL" | awk '{print $1}')
+  if [[ -z $want || $want != "$got" ]]; then
+    warn "Node.js checksum mismatch on the host; the container will try itself."
+    rm -f "$NODE_TARBALL"; NODE_TARBALL=""
+    return 0
+  fi
+}
+
 install_inside() {
-  local id=$1 setup_code=$2 root_dir
+  local id=$1 setup_code=$2 root_dir node_arg=""
   root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
   pct push "$id" "$PAYLOAD" /root/origami-app.tgz
   pct push "$id" "$root_dir/scripts/install-inside.sh" /root/install-inside.sh
   pct push "$id" "$root_dir/config/origami.service" /root/origami.service
-  pct exec "$id" -- bash /root/install-inside.sh "$PORT" "$setup_code" "$NODE_MAJOR"
+  if [[ -n ${NODE_TARBALL:-} && -f $NODE_TARBALL ]]; then
+    pct push "$id" "$NODE_TARBALL" /root/node.tar.xz
+    node_arg=/root/node.tar.xz
+  fi
+  pct exec "$id" -- bash /root/install-inside.sh "$PORT" "$setup_code" "$NODE_MAJOR" "$node_arg"
 }
 
 health_check() {
@@ -391,12 +437,14 @@ fi
 
 wait_for_ct "$CTID"
 prepare_payload
+prepare_node_tarball
 install_inside "$CTID" "$SETUP_CODE"
 CT_IP=$(ct_ip "$CTID")
 [[ -n $CT_IP ]] || die "Could not determine the container IP."
 health_check "$CTID" "http://${CT_IP}:${PORT}"
 
 rm -f "$PAYLOAD"
+[[ -n ${NODE_TARBALL:-} ]] && rm -f "$NODE_TARBALL"
 
 cat <<EOF
 

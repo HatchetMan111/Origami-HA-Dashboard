@@ -56,6 +56,16 @@ Schlägt ein Plugin fehl, steht das im Apply-Log als Warnung; der Rest wird trot
 - `configuration.yaml` muss `frontend: themes: !include_dir_merge_named themes` enthalten. Der Assistent patcht das nur, wenn kein Inline-`frontend:`-Wert existiert; andernfalls steht eine Warnung im Plan.
 - Nach dem Patch Home Assistant neu starten bzw. Themes neu laden.
 
+**„curl: (56) Recv failure“ beim Node-Download**
+
+Der Download von nodejs.org (~30 MB) wurde im Container abgebrochen, meist durch MTU-/NAT-Probleme im LXC-Netz. Ab `main` lädt der Installer die Datei deshalb auf dem Proxmox-Host, prüft die SHA256-Summe und pusht sie als `/root/node.tar.xz` in den Container. Im Container wird nur noch entpackt. Schlägt der Host-Download fehl, versucht es der Container selbst erneut (mit Retries und IPv4-Fallback).
+
+Manuell prüfen:
+
+```bash
+pct exec 112 -- curl -4 -I https://nodejs.org/dist/latest-v22.x/
+```
+
 ## Node.js wird im Container nicht gefunden
 
 Symptom: `install-inside.sh: line 40: node: command not found` direkt nach „Installing Node.js 22 …“.
