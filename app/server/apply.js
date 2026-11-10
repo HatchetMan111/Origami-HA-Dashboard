@@ -204,7 +204,10 @@ export async function installPluginsAsync(keys, log = () => {}) {
 }
 
 export async function ensureResources(ha, pluginKeys, log = () => {}) {
-  const wanted = resourcesFor(pluginKeys);
+  const wanted = [
+    { key: "fonts", url: "/local/fonts/montserrat.css", type: "css" },
+    ...resourcesFor(pluginKeys),
+  ];
   const existing = await ha.resources();
   const byUrl = new Map((existing || []).map((resource) => [resource.url, resource]));
   const created = [];
@@ -212,7 +215,7 @@ export async function ensureResources(ha, pluginKeys, log = () => {}) {
   for (const resource of wanted) {
     if (byUrl.has(resource.url)) continue;
     try {
-      const result = await ha.createResource(resource.url, "module");
+      const result = await ha.createResource(resource.url, resource.type || "module");
       created.push({ ...resource, id: result?.id });
       log(`Ressource angelegt: ${resource.url}`);
     } catch (error) {
@@ -292,6 +295,7 @@ export async function verify(ha, dashboard, created = {}) {
   try {
     const resources = await ha.resources();
     const urls = new Set((resources || []).map((entry) => entry.url));
+    add("Ressource Fonts", urls.has("/local/fonts/montserrat.css"), "/local/fonts/montserrat.css");
     for (const plugin of PLUGINS) {
       if (!created.plugins?.includes(plugin.key) || !plugin.resource) continue;
       add(`Ressource ${plugin.key}`, urls.has(plugin.resource), plugin.resource);
@@ -446,6 +450,7 @@ export async function buildBundle(dashboard, options, outFile) {
       "     Bubble Card, Bubble Card Tools (Integration), Origami Header,",
       "     Origami Notifications, Origami Weather, Navbar Card",
       "   Ressourcen: Einstellungen → Dashboards → Ressourcen",
+      "     /local/fonts/montserrat.css                       (Stylesheet)",
       "     /local/community/bubble-card/bubble-card.js",
       "     /local/community/origami-notifications/origami-notifications.js",
       "     /local/community/origami-weather/origami-weather.js",

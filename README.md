@@ -103,7 +103,8 @@ Das Bundle enthält Origami-Dateien und unterliegt damit der AGPL-3.0 (siehe unt
 
 ## Sicherheit
 
-- Der Long-Lived Token wird mit AES-256-GCM verschlüsselt in `data/state.json` abgelegt; der Schlüssel liegt in `data/secret.key` (Modus `0600`).
+- Der Dienst läuft als root **innerhalb eines unprivilegierten LXC**. Das ist nötig, weil der eingebundene `/config`-Ordner auf dem Host der Container-Root-UID gehört; ein eigener Dienstbenutzer käme dort nicht an die Dateien. Der Container selbst hat keine Root-Rechte auf dem Proxmox-Host.
+- Der Long-Lived Token wird mit AES-256-GCM verschlüsselt in `data/state.json` abgelegt; der Schlüssel liegt in `data/secret.key` (Modus `0600`, Verzeichnis `0700`).
 - Die Weboberfläche ist mit einem Setup-Code geschützt (Session-Cookie, 12 h). Der Code steht in `/opt/origami/setup-code`.
 - Der Assistent lauscht im lokalen Netz; er sollte nicht direkt aus dem Internet erreichbar sein. Für Fernzugriff den Home-Assistant-Zugang oder ein VPN nutzen.
 - Vor jedem Schreiben wird ein Backup der betroffenen Dateien unter `data/backups` angelegt. Rollback ist im Assistenten möglich.

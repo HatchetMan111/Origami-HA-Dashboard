@@ -41,12 +41,10 @@ node -v
 npm -v
 
 msg "Installing the app …"
-id -u origami >/dev/null 2>&1 || useradd --system --home /opt/origami --shell /usr/sbin/nologin origami
-install -d -o origami -g origami /opt/origami/app /opt/origami/data
+install -d -m 0755 /opt/origami/app /opt/origami/data
 mkdir -p /ha-config
 
 tar xzf /root/origami-app.tgz -C /opt/origami/app
-chown -R origami:origami /opt/origami/app
 
 cd /opt/origami/app
 npm install --omit=dev --no-audit --no-fund --loglevel=error
@@ -54,14 +52,13 @@ npm install --omit=dev --no-audit --no-fund --loglevel=error
 if [[ -n $SETUP_CODE ]]; then
   printf '%s\n' "$SETUP_CODE" > /opt/origami/setup-code
   chmod 600 /opt/origami/setup-code
-  chown origami:origami /opt/origami/setup-code
 fi
 
 msg "Installing the service …"
 install -m 0644 /root/origami.service /etc/systemd/system/origami.service
 sed -i "s/^Environment=PORT=.*/Environment=PORT=${PORT}/" /etc/systemd/system/origami.service
 
-chown -R origami:origami /opt/origami
+chmod 700 /opt/origami/data
 systemctl daemon-reload
 systemctl enable --now origami.service
 

@@ -5,8 +5,9 @@ After=network-online.target
 
 [Service]
 Type=simple
-User=origami
-Group=origami
+# Runs as root inside the unprivileged container: the bind-mounted HA config is
+# owned by the container's root mapping on the host, so a separate service user
+# could not write to it.
 WorkingDirectory=/opt/origami/app
 ExecStart=/usr/local/bin/node server/index.js
 Environment=NODE_ENV=production

@@ -12,6 +12,7 @@ CORES=2
 RAM=2048
 DISK=8
 STORAGE=""
+TEMPLATE_STORAGE="${TEMPLATE_STORAGE:-}"
 BRIDGE="vmbr0"
 IP="dhcp"
 GATEWAY=""
@@ -42,6 +43,7 @@ ${C_B}Origami-LXC${C_0} – Origami dashboard setup appliance for Home Assistant
   --ram <mb>            memory (default: 2048)
   --disk <gb>           root disk (default: 8)
   --storage <name>      PVE storage for the root disk
+  --template-storage <name>  PVE storage for LXC templates (default: local)
   --ha-config <path>    host path with Home Assistant's /config (bind mount)
   --port <n>            web port inside the container (default: 8080)
   --dry-run             print what would happen, change nothing
@@ -68,15 +70,27 @@ next_id() {
 
 pick_storage() {
   if [[ -n $STORAGE ]]; then printf '%s' "$STORAGE"; return; fi
-  if pvesm status --content images 2>/dev/null | awk '$1 == "local-lvm" {found=1} END {exit !found}'; then
+  if pvesm status --content rootdir 2>/dev/null | awk '$1 == "local-lvm" {found=1} END {exit !found}'; then
     printf 'local-lvm'
+  elif pvesm status --content rootdir 2>/dev/null | awk '$1 == "local" {found=1} END {exit !found}'; then
+    printf 'local'
   else
-    pvesm status --content images 2>/dev/null | awk '$1 == "local" {found=1} END {exit !found}' && printf 'local' || printf 'local-lvm'
+    pvesm status --content rootdir 2>/dev/null | awk 'NR == 2 {print $1}'
+  fi
+}
+
+pick_template_storage() {
+  if [[ -n ${TEMPLATE_STORAGE:-} ]]; then printf '%s' "$TEMPLATE_STORAGE"; return; fi
+  if pvesm status --content vztmpl 2>/dev/null | awk '$1 == "local" {found=1} END {exit !found}'; then
+    printf 'local'
+  else
+    pvesm status --content vztmpl 2>/dev/null | awk 'NR == 2 {print $1}'
   fi
 }
 
 ensure_template() {
   local storage=$1
+  [[ -n $storage ]] || die "No storage for LXC templates found. Check Datacenter → Storage → Content."
   local template
   template=$(pveam list "$storage" 2>/dev/null | awk '/debian-13-standard/ {print $1; exit}')
   [[ -n $template ]] && { printf '%s' "$template"; return; }
@@ -90,7 +104,9 @@ ensure_template() {
   [[ -z $name ]] && name=$(pveam available --section system 2>/dev/null | awk '/debian-12-standard/ {print $NF; exit}')
   [[ -n $name ]] || die "No Debian template available. Run 'pveam update' and try again."
   pveam download "$storage" "$name" >/dev/null
-  printf '%s:%s' "$storage" "$name"
+  template=$(pveam list "$storage" 2>/dev/null | awk -v n="$name" '$1 ~ n"$" {print $1; exit}')
+  [[ -n $template ]] || die "Template $name was downloaded but not found in $storage."
+  printf '%s' "$template"
 }
 
 create_ct() {
@@ -149,7 +165,7 @@ prepare_payload() {
   PAYLOAD=$(mktemp /tmp/origami-app.XXXXXX.tgz)
   if [[ -d $root_dir/app/server && -f $root_dir/app/package.json ]]; then
     msg "Using the local checkout at $root_dir"
-    tar czf "$PAYLOAD" -C "$root_dir/app" .
+    tar czf "$PAYLOAD" -C "$root_dir/app" --exclude=node_modules --exclude=data --exclude=test .
   else
     msg "Downloading $REPO@$REF …"
     local tmp
@@ -161,7 +177,7 @@ prepare_payload() {
     local appdir
     appdir=$(find "$tmp" -maxdepth 2 -type d -name app | head -1)
     [[ -n $appdir ]] || die "Repository has no app/ directory."
-    tar czf "$PAYLOAD" -C "$appdir" .
+    tar czf "$PAYLOAD" -C "$appdir" --exclude=node_modules --exclude=data --exclude=test .
     rm -rf "$tmp"
   fi
 }
@@ -200,6 +216,7 @@ while [[ $# -gt 0 ]]; do
     --ram) RAM=${2:?}; shift 2 ;;
     --disk) DISK=${2:?}; shift 2 ;;
     --storage) STORAGE=${2:?}; shift 2 ;;
+    --template-storage) TEMPLATE_STORAGE=${2:?}; shift 2 ;;
     --ha-config) HA_CONFIG=${2:?}; shift 2 ;;
     --port) PORT=${2:?}; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
@@ -243,7 +260,8 @@ EOF
 fi
 
 STORAGE=$(pick_storage)
-TMPL=$(ensure_template "$STORAGE")
+TEMPLATE_STORAGE=$(pick_template_storage)
+TMPL=$(ensure_template "$TEMPLATE_STORAGE")
 [[ -n $TMPL ]] || die "No template found."
 
 SETUP_CODE=$(tr -dc 'A-Z2-9' </dev/urandom | head -c 8)

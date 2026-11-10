@@ -13,8 +13,9 @@
 set -euo pipefail
 
 CTID="" SMB="" USER="" PASS="" PATH_SRC="" HA_CTID=""
-C_G=$'\033[32m'; C_R=$'\033[31m'; C_0=$'\033[0m'
+C_G=$'\033[32m'; C_Y=$'\033[33m'; C_R=$'\033[31m'; C_0=$'\033[0m'
 msg() { printf '%s\n' "${C_G}==>${C_0} $*"; }
+warn() { printf '%s\n' "${C_Y}!! ${C_0}$*"; }
 die() { printf '%s\n' "${C_R}xx ${C_0}$*" >&2; exit 1; }
 
 usage() {
@@ -68,7 +69,7 @@ if [[ -n $SMB ]]; then
     printf 'username=%s\npassword=%s\n' "$USER" "${PASS:-}" > "$cred"
     chmod 600 "$cred"
     msg "Mounting $SMB …"
-    mount -t cifs "$SMB" "$MOUNTPOINT" -o "credentials=$cred,uid=0,gid=0,vers=3.0,iocharset=utf8,noperm"
+    mount -t cifs "$SMB" "$MOUNTPOINT" -o "credentials=$cred,uid=0,gid=0,vers=3.0,iocharset=utf8,noperm,dir_mode=0777,file_mode=0666"
     rm -f "$cred"
   fi
 elif [[ -n $PATH_SRC ]]; then
@@ -78,6 +79,11 @@ elif [[ -n $PATH_SRC ]]; then
     msg "Bind-mounting $PATH_SRC …"
     mount --bind "$PATH_SRC" "$MOUNTPOINT"
   fi
+  owner=$(stat -c '%u' "$PATH_SRC" 2>/dev/null || echo 0)
+  if [[ $owner -ne 100000 ]]; then
+    warn "Der Ordner gehört auf dem Host UID $owner. Im unprivilegierten Container ist er nur schreibbar, wenn er UID 100000 gehört oder für alle schreibbar ist."
+    warn "Bei einer privilegierten HA-Installation besser den Samba-Share (--smb) verwenden."
+  fi
 else
   usage
   exit 1
@@ -86,7 +92,7 @@ fi
 # Persist across host reboots
 FSTAB_LINE=""
 if [[ -n $SMB ]]; then
-  FSTAB_LINE="${SMB} ${MOUNTPOINT} cifs credentials=/etc/origami-cifs.credentials,uid=0,gid=0,vers=3.0,iocharset=utf8,noperm 0 0"
+  FSTAB_LINE="${SMB} ${MOUNTPOINT} cifs credentials=/etc/origami-cifs.credentials,uid=0,gid=0,vers=3.0,iocharset=utf8,noperm,dir_mode=0777,file_mode=0666 0 0"
   printf 'username=%s\npassword=%s\n' "$USER" "${PASS:-}" > /etc/origami-cifs.credentials
   chmod 600 /etc/origami-cifs.credentials
 elif [[ -n $PATH_SRC ]]; then

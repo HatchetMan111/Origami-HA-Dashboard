@@ -63,7 +63,7 @@ Diese String-Ersetzung ist bewusst pragmatisch: Sie funktioniert mit dem gepinnt
 - `data/backups` – HA-Config-Backups (nur relevante Pfade) und temporäre Bundles
 - `data/vendor` – entpackter Origami-Stand
 
-Die Oberfläche nutzt ein signiertes Session-Cookie mit 12 h Laufzeit, Login-Rate-Limit pro IP und denselben Setup-Code wie der Installer. Der Token verlässt den Container nicht.
+Die Oberfläche nutzt ein signiertes Session-Cookie mit 12 h Laufzeit, Login-Rate-Limit pro IP und denselben Setup-Code wie der Installer. Der Token verlässt den Container nicht. Der Dienst läuft als root im unprivilegierten Container, weil der Bind-Mount der HA-Config sonst nicht beschreibbar wäre.
 
 ## Grenzen
 

@@ -121,12 +121,16 @@ function buildGreeting(dict, ctx) {
     return card;
   }
   const island = card.cards[1];
+  if (!dict["weather.home"]) delete island.weather;
   island.entities = (island.entities || []).filter((entry) => {
     const id = typeof entry === "string" ? entry : entry?.entity;
     if (!looksEntity(id)) return true;
     if (id.startsWith("input_")) return true;
     return ctx.known.has(id);
   });
+  if (card.cards[0]?.sub_button?.main) {
+    card.cards[0].sub_button.main = pruneButtons(card.cards[0].sub_button.main, ctx);
+  }
   return card;
 }
 
@@ -154,10 +158,11 @@ function buildRoomsHeader(dict, ctx) {
 
   let card = mapTree(parse(text), dict);
   card.sub_button.main = pruneButtons(card.sub_button?.main || [], ctx).filter((item) => {
+    if (item.name === "Temperature") return temps.length > 0;
+    if (item.name === "Windows") return windows.length > 0;
     if (item.entity === "input_boolean.climate_table") return ctx.options.climateTable;
     return true;
   });
-  if (!temps.length && card.sub_button.main[0]) card.sub_button.main.shift();
   return card;
 }
 
@@ -272,8 +277,9 @@ function buildLightsPopup(mapping, dict, ctx) {
 function buildNavbar(dict, ctx) {
   let card = parse(readPart("dashboard/navigation-bar/card.yaml"));
   delete card.media_player;
+  const group = dict["light.living_room"];
   const allowed = new Set();
-  if (ctx.options.lightsPopup) allowed.add("#popup_lights");
+  if (ctx.options.lightsPopup && group) allowed.add("#popup_lights");
   if (ctx.options.menu) allowed.add("#popup_menu");
 
   card.routes = (card.routes || []).filter((route) => {
@@ -284,8 +290,7 @@ function buildNavbar(dict, ctx) {
   });
 
   const lightsRoute = card.routes.find((route) => route.tap_action?.navigation_path === "#popup_lights");
-  if (lightsRoute?.popup) {
-    const group = dict["light.living_room"];
+  if (lightsRoute?.popup && group) {
     lightsRoute.popup = lightsRoute.popup
       .filter((item) => !item.tap_action?.perform_action?.startsWith("scene."))
       .map((item) => {
@@ -332,9 +337,16 @@ export function buildDashboard(mapping, options, runtime = {}) {
   if (options.weather && mapping.global?.weather) cards.push(buildWeather(dict, ctx));
   if (options.rooms && rooms.length) {
     cards.push(buildRoomsHeader(dict, ctx));
-    for (const room of rooms) {
-      if (roomHasCards(room)) cards.push(buildRoomCard(room, dict, ctx));
-    }
+    rooms.forEach((room, index) => {
+      if (!roomHasCards(room)) return;
+      const card = buildRoomCard(room, dict, ctx);
+      if (options.allRooms && rooms.length > 3 && index >= 3) {
+        card.visibility = [
+          { condition: "state", entity: "input_boolean.all_rooms", state: "on" },
+        ];
+      }
+      cards.push(card);
+    });
     if (options.allRooms && rooms.length > 3) {
       cards.push(mapTree(parse(readPart("dashboard/rooms/all-rooms.yaml")), dict));
     }

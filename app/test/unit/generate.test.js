@@ -166,3 +166,16 @@ test("buildDashboard skips rooms without any entities", { skip: !isSynced() && "
   assert.doesNotMatch(json, /Leer/);
   assert.equal(dashboard.stats.rooms, 2);
 });
+
+test("buildDashboard drops example entities when calendar and weather are missing", { skip: !isSynced() && "Origami vendor not synced" }, () => {
+  const mapping = structuredClone(MAPPING);
+  mapping.global.calendar = "";
+  mapping.global.weather = "";
+  const options = { ...OPTIONS, weather: false };
+  const dashboard = buildDashboard(mapping, options, { knownEntities: STATES.map((s) => s.entity_id), states: STATES });
+  const json = JSON.stringify(dashboard.config);
+  for (const example of ["calendar.household", "weather.home", "sensor.weather_warning_level", "timer.bath", "sensor.oven_ready_in", "sensor.dinner", "vacuum.robot"]) {
+    assert.doesNotMatch(json, new RegExp(example.replace(".", "\\.")));
+  }
+  assert.deepEqual(dashboard.missingEntities, []);
+});
