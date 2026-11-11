@@ -60,11 +60,17 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+@supports (min-height: 100dvh) {
+  body { min-height: 100dvh; }
+}
+
 .shell {
   max-width: 940px;
   margin: 0 auto;
-  padding: 28px 18px 80px;
+  padding: 28px 18px calc(80px + env(safe-area-inset-bottom, 0px));
 }
+
+button, .button, select, label.switch { touch-action: manipulation; }
 
 .hero {
   display: flex;
@@ -182,6 +188,7 @@ body {
   color: var(--ink-2);
   font-size: 13.5px;
   max-width: 68ch;
+  overflow-wrap: anywhere;
 }
 
 .grid { display: grid; gap: 14px; }
@@ -226,12 +233,7 @@ input::placeholder { color: var(--ink-3); }
 
 select { appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--ink-3) 50%), linear-gradient(135deg, var(--ink-3) 50%, transparent 50%); background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; padding-right: 34px; }
 
-/* iOS zooms into inputs with a font size below 16px. */
-@media (max-width: 720px) {
-  input[type="text"], input[type="url"], input[type="password"], select, textarea { font-size: 16px; }
-}
-
-.hint { font-size: 12.5px; color: var(--ink-3); margin: 6px 0 0; }
+.hint { font-size: 12.5px; color: var(--ink-3); margin: 6px 0 0; overflow-wrap: anywhere; }
 .hint a { color: var(--accent); }
 
 button, .button {
@@ -302,6 +304,7 @@ button.danger { color: var(--bad); }
   font-size: 13.5px;
   border: 1px solid transparent;
   margin: 0 0 16px;
+  overflow-wrap: anywhere;
 }
 
 .banner.ok { background: var(--ok-soft); color: var(--ok); }
@@ -337,12 +340,19 @@ button.danger { color: var(--bad); }
 }
 
 .room-head input.name {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
   border: 0;
+  border-bottom: 1px dashed color-mix(in srgb, var(--ink-3) 45%, transparent);
+  border-radius: 0;
   background: transparent;
   font-weight: 700;
   font-size: 15px;
-  padding: 2px 0;
+  padding: 3px 2px;
 }
+
+.room-head button { flex: none; white-space: nowrap; }
 
 .room-head input.name:focus { background: var(--card); }
 
@@ -402,6 +412,7 @@ button.danger { color: var(--bad); }
 .log .warn { color: #e2b072; }
 .log .error { color: #ef9a8f; }
 .log .ok { color: #9ccdb7; }
+.log .pending { color: #8b857b; }
 
 .check {
   display: flex;
@@ -434,6 +445,8 @@ code.inline {
   padding: 2px 6px;
   font-size: 12.5px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 pre.snippet {
@@ -463,13 +476,16 @@ pre.snippet {
 .toast {
   position: fixed;
   left: 50%;
-  bottom: 24px;
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%) translateY(20px);
   background: var(--ink);
   color: var(--paper);
   padding: 11px 18px;
-  border-radius: 999px;
+  border-radius: 22px;
   font-size: 13px;
+  line-height: 1.4;
+  max-width: calc(100vw - 32px);
+  text-align: center;
   opacity: 0;
   pointer-events: none;
   transition: opacity 160ms ease, transform 160ms ease;
@@ -486,3 +502,88 @@ pre.snippet {
 .hidden { display: none !important; }
 
 .hero .logo svg path { fill: var(--paper); }
+
+/* ------------------------------------------------------------ mobile polish */
+
+@media (max-width: 720px) {
+  .shell {
+    padding: calc(20px + env(safe-area-inset-top, 0px)) 14px calc(48px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .card { padding: 16px; }
+
+  /* 16px stops iOS Safari from zooming when a field gets focus. */
+  input[type="text"],
+  input[type="url"],
+  input[type="password"],
+  input[type="email"],
+  input[type="number"],
+  select,
+  textarea,
+  .room-head input.name {
+    font-size: 16px;
+  }
+
+  .room label.field > span { font-size: 11.5px; }
+
+  pre.snippet { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+  details.missing summary { padding: 10px 0; margin: -10px 0; }
+
+  /* Comfortable finger targets. */
+  button, .button { min-height: 44px; }
+  button.small { min-height: 40px; }
+  .step { min-height: 40px; }
+  .row.mt > .primary { width: 100%; }
+
+  /* Keep the primary action reachable on the long mapping page. */
+  .view-map .shell { padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px)); }
+  .map-actions {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 15;
+    margin: 0;
+    padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
+    background: var(--paper);
+    background: color-mix(in srgb, var(--paper) 92%, transparent);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    border-top: 1px solid var(--line);
+    flex-wrap: nowrap;
+  }
+  .map-actions .push { display: none; }
+  .map-actions > button { flex: 1 1 0; }
+  .map-actions > button.primary { flex-grow: 1.6; }
+  .view-map .toast { bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
+}
+
+@media (max-width: 480px) {
+  /* Keep the three steps on one line on narrow phones. */
+  .stepper { flex-wrap: nowrap; gap: 4px; }
+  .step { flex: 1 1 auto; justify-content: center; padding: 6px 8px; font-size: 12px; gap: 6px; }
+  .step .num { width: 20px; height: 20px; font-size: 10.5px; }
+  .row.end { justify-content: stretch; }
+  .row.end > button, .row.end > .button { flex: 1 1 130px; }
+  .row.end > .primary { flex-grow: 1.7; }
+  .row.end.map-actions > button { flex: 1 1 0; }
+  .row.end.map-actions > button.primary { flex-grow: 1.6; }
+
+  /* On phones the primary action comes first and spans the card. */
+  .plan-actions { flex-direction: column; align-items: stretch; gap: 8px; }
+  .plan-actions .push { display: none; }
+  .plan-actions > button, .plan-actions > .button { width: 100%; }
+  .plan-actions > .primary { order: -1; }
+
+  .apply-next > button, .apply-next > .button { flex: 1 1 130px; }
+  .apply-next > .primary { flex: 1 1 100%; }
+  .apply-next .push { display: none; }
+  .apply-actions > .ghost { flex: 1 1 130px; }
+}
+
+@media (max-width: 400px) {
+  .stepper { gap: 2px; }
+  .step { padding: 6px; font-size: 11.5px; gap: 5px; }
+  .step .num { width: 19px; height: 19px; }
+}

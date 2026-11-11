@@ -124,6 +124,8 @@ function renderStepper() {
     .join("");
 }
 
+let lastView = null;
+
 function render() {
   $("#status").innerHTML = statusChip();
   renderStepper();
@@ -135,6 +137,16 @@ function render() {
   else if (S.view === "plan") app.innerHTML = planView();
   else if (S.view === "apply") app.innerHTML = applyView();
   else if (S.view === "error") app.innerHTML = errorView();
+
+  if (lastView !== S.view) {
+    lastView = S.view;
+    window.scrollTo(0, 0);
+    if (S.view === "auth") {
+      // autofocus is not applied reliably to markup inserted after load.
+      $("#app input[name=code]")?.focus({ preventScroll: true });
+    }
+  }
+  document.body.classList.toggle("view-map", S.view === "map");
 }
 
 function authView() {
@@ -144,7 +156,7 @@ function authView() {
       <code class="inline">cat /opt/origami/setup-code</code></p>
     <form data-form="login">
       <label class="field"><span>Setup-Code</span>
-        <input type="text" name="code" autocomplete="one-time-code" autocapitalize="characters" placeholder="z. B. 7A3F91C2B45D" required autofocus />
+        <input type="text" name="code" autocomplete="one-time-code" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="z. B. 7A3F91C2B45D" required autofocus />
       </label>
       <div class="row mt"><button class="primary" type="submit">Entsperren</button></div>
     </form>
@@ -171,10 +183,10 @@ function connectView() {
       <form data-form="connect">
         <div class="grid two">
           <label class="field"><span>Home Assistant URL</span>
-            <input type="url" name="url" placeholder="http://192.168.1.10:8123" value="${esc(info?.url || "")}" required />
+            <input type="url" name="url" placeholder="http://192.168.1.10:8123" value="${esc(info?.url || "")}" autocomplete="url" autocapitalize="off" autocorrect="off" spellcheck="false" required />
           </label>
           <label class="field"><span>Long-Lived Access Token</span>
-            <input type="password" name="token" placeholder="eyJ0eXAiOiJKV1Qi…" autocomplete="off" required />
+            <input type="password" name="token" placeholder="eyJ0eXAiOiJKV1Qi…" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" required />
           </label>
         </div>
         <div class="row mt">
@@ -269,7 +281,7 @@ function mapView() {
       <div class="switch-grid">${switches}</div>
     </section>
 
-    <div class="row end">
+    <div class="row end map-actions">
       <button class="ghost" data-action="reconnect">Zurück</button>
       <button class="primary" data-action="plan">Weiter zur Prüfung</button>
     </div>`;
@@ -296,7 +308,7 @@ function planView() {
         <p class="hint">Diese IDs kommen aus Origamis Beispiel-Haus und existieren bei dir nicht. Sie lassen sich später im HA-Editor ersetzen; betroffene Karten bleiben sonst leer.</p>
         <div class="row" style="gap:6px">${missing.slice(0, 40).map((id) => `<code class="inline">${esc(id)}</code>`).join(" ")}</div>
       </details>` : `<div class="banner ok"><strong>Alle Entitäten vorhanden</strong>Es fehlen keine Beispiel-Entitäten.</div>`}
-      <div class="row mt">
+      <div class="row mt plan-actions">
         <a class="button" href="/api/bundle">Bundle herunterladen (manuell)</a>
         <div class="push"></div>
         <button class="ghost" data-action="back-map">Zurück</button>
@@ -320,6 +332,11 @@ function applyView() {
   const created = S.session?.created;
   const last = S.session?.lastApply;
   const logs = (S.job?.logs || []).map((entry) => `<div class="${entry.level}">${esc(entry.message)}</div>`).join("");
+  const log = logs
+    ? `<div class="log mt" id="log">${logs}</div>`
+    : S.job?.status === "running"
+      ? `<div class="log mt" id="log"><div class="pending">Warte auf Ausgabe …</div></div>`
+      : "";
   const dashboardUrl = `${S.session?.connected?.url || ""}/lovelace/${S.plan?.dashboard?.urlPath || "origami-dashboard"}`;
   const failed = S.job?.status === "error";
 
@@ -329,9 +346,10 @@ function applyView() {
         <p class="sub" style="margin:4px 0 0">${failed ? esc(S.job?.error || "") : "Bitte diese Seite offen lassen."}</p></div>
         ${S.job?.status === "running" ? `<span class="chip warn"><span class="dot"></span>läuft</span>` : ""}
       </div>
-      <div class="log mt" id="log">${logs}</div>
-      <div class="row mt">
-        ${S.job?.status === "running" ? "" : `<button class="ghost" data-action="reload">Status aktualisieren</button>`}
+      ${log}
+      <div class="row mt apply-actions">
+        ${S.job?.status === "running" ? "" : `<button class="ghost" data-action="reload">Status holen</button>`}
+        ${failed ? `<button class="ghost" data-action="back-plan">Zur Prüfung</button>` : ""}
         <div class="push"></div>
         ${!S.job?.status || S.job.status === "done" ? `<button class="primary" data-action="open-dashboard" data-href="${esc(dashboardUrl)}">Dashboard öffnen</button>` : ""}
       </div>
@@ -342,7 +360,7 @@ function applyView() {
     ${created ? `<section class="card">
       <h2>Nächste Schritte</h2>
       <p class="sub">Home Assistant einmal neu starten, damit die Bubble-Card-Tools-Integration und das Theme sicher geladen sind.</p>
-      <div class="row">
+      <div class="row apply-next">
         <button class="primary" data-action="restart">Home Assistant neu starten</button>
         <button class="ghost" data-action="verify">Nur prüfen</button>
         <div class="push"></div>
@@ -419,6 +437,7 @@ function appendLog(entry) {
   S.job.logs.push(entry);
   const log = $("#log");
   if (!log) return;
+  log.querySelector(".pending")?.remove();
   const line = document.createElement("div");
   line.className = entry.level;
   line.textContent = entry.message;
@@ -574,6 +593,7 @@ document.addEventListener("click", async (event) => {
 
   try {
     if (action === "reconnect") {
+      if (S.view === "map") saveMapping().catch(() => {});
       S.view = "connect";
       render();
     } else if (action === "discover") {
@@ -591,6 +611,11 @@ document.addEventListener("click", async (event) => {
     } else if (action === "back-map") {
       S.view = "map";
       render();
+    } else if (action === "back-plan") {
+      if (S.plan) {
+        S.view = "plan";
+        render();
+      }
     } else if (action === "apply") {
       button.disabled = true;
       await startApply();
@@ -614,6 +639,7 @@ document.addEventListener("click", async (event) => {
     } else if (action === "reload") {
       const session = await api("/api/session");
       absorb(session);
+      S.checks = session.lastApply?.checks || S.checks;
       render();
     }
   } catch (error) {

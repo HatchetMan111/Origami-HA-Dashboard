@@ -141,6 +141,8 @@ test("buildDashboard renders the home view from real Origami templates", { skip:
   assert.doesNotMatch(json, /scene\./);
   assert.match(json, /"label":"Turn on"/);
   assert.match(json, /input_boolean\.climate_table/);
+  const [roomCard] = findCards(dashboard.config, (node) => node.name === "Wohnzimmer" && node.type === "custom:bubble-card");
+  assert.equal(roomCard.grid_options.columns, "full");
   assert.ok(Array.isArray(dashboard.helpers));
   assert.equal(dashboard.helpers[0].entity, "input_boolean.climate_table");
 });
@@ -178,4 +180,66 @@ test("buildDashboard drops example entities when calendar and weather are missin
     assert.doesNotMatch(json, new RegExp(example.replace(".", "\\.")));
   }
   assert.deepEqual(dashboard.missingEntities, []);
+});
+
+function findCards(node, predicate, found = []) {
+  if (Array.isArray(node)) {
+    for (const item of node) findCards(item, predicate, found);
+  } else if (node && typeof node === "object") {
+    if (predicate(node)) found.push(node);
+    for (const value of Object.values(node)) findCards(value, predicate, found);
+  }
+  return found;
+}
+
+test("navbar only keeps routes that can work in v0.1", { skip: !isSynced() && "Origami vendor not synced" }, () => {
+  const dashboard = buildDashboard(MAPPING, OPTIONS, { knownEntities: STATES.map((s) => s.entity_id), states: STATES });
+  const [navbar] = findCards(dashboard.config, (node) => node.type === "custom:navbar-card");
+  assert.ok(navbar, "navbar card is generated");
+  assert.deepEqual(navbar.routes.map((route) => route.label), ["Lights"]);
+  const json = JSON.stringify(navbar);
+  assert.doesNotMatch(json, /popup_music|popup_tv|popup_favorites/);
+  assert.doesNotMatch(json, /fire-dom-event/);
+});
+
+test("navbar keeps the menu route only when the menu card is enabled", { skip: !isSynced() && "Origami vendor not synced" }, () => {
+  const dashboard = buildDashboard(MAPPING, { ...OPTIONS, menu: true, lightsPopup: false }, { knownEntities: STATES.map((s) => s.entity_id), states: STATES });
+  const [navbar] = findCards(dashboard.config, (node) => node.type === "custom:navbar-card");
+  assert.ok(navbar);
+  assert.deepEqual(navbar.routes.map((route) => route.label), ["Menu"]);
+});
+
+test("navbar is left out when no route is available", { skip: !isSynced() && "Origami vendor not synced" }, () => {
+  const mapping = structuredClone(MAPPING);
+  mapping.global.lights = [];
+  mapping.global.groupLight = "";
+  mapping.rooms[0].lights = [];
+  mapping.rooms[0].light = "";
+  const dashboard = buildDashboard(mapping, OPTIONS, { knownEntities: STATES.map((s) => s.entity_id), states: STATES });
+  assert.equal(findCards(dashboard.config, (node) => node.type === "custom:navbar-card").length, 0);
+  assert.doesNotMatch(JSON.stringify(dashboard.config), /navbar-card/);
+});
+
+test("room light is used when the discovered light list is empty", { skip: !isSynced() && "Origami vendor not synced" }, () => {
+  const mapping = structuredClone(MAPPING);
+  mapping.global.lights = [];
+  mapping.global.groupLight = "";
+  mapping.rooms[0].lights = [];
+  mapping.rooms[0].light = "light.b";
+  const dashboard = buildDashboard(mapping, OPTIONS, { knownEntities: STATES.map((s) => s.entity_id), states: STATES });
+  const [navbar] = findCards(dashboard.config, (node) => node.type === "custom:navbar-card");
+  assert.ok(navbar);
+  assert.deepEqual(navbar.routes.map((route) => route.label), ["Lights"]);
+  assert.match(JSON.stringify(dashboard.config), /light\.b/);
+});
+
+test("climate table and its helper are skipped without climate data", { skip: !isSynced() && "Origami vendor not synced" }, () => {
+  const mapping = structuredClone(MAPPING);
+  mapping.rooms[0].temperature = "";
+  mapping.rooms[0].humidity = "";
+  mapping.rooms[0].window = "";
+  const dashboard = buildDashboard(mapping, OPTIONS, { knownEntities: STATES.map((s) => s.entity_id), states: STATES });
+  const json = JSON.stringify(dashboard.config);
+  assert.doesNotMatch(json, /origami_table|input_boolean\.climate_table/);
+  assert.equal(dashboard.helpers.some((helper) => helper.entity === "input_boolean.climate_table"), false);
 });

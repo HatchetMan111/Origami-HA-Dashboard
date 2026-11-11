@@ -163,7 +163,7 @@ function buildRoomsHeader(dict, ctx) {
   card.sub_button.main = pruneButtons(card.sub_button?.main || [], ctx).filter((item) => {
     if (item.name === "Temperature") return temps.length > 0;
     if (item.name === "Windows") return windows.length > 0;
-    if (item.entity === "input_boolean.climate_table") return ctx.options.climateTable;
+    if (item.entity === "input_boolean.climate_table") return ctx.options.climateTable && ctx.hasClimate;
     return true;
   });
   return card;
@@ -182,6 +182,9 @@ function buildRoomCard(room, dict, ctx) {
   card.name = room.name;
   card.icon = room.icon || "mdi:home";
   card.entity = room.light || room.climate || room.temperature || room.media || room.window || "";
+  // Origami's template uses 6 of 12 columns, which puts two rooms side by
+  // side even on a phone. One room per row stays readable in the app.
+  card.grid_options = { ...(card.grid_options || {}), columns: "full" };
   // Room pop-ups arrive in v0.2; for now a tap opens the entity dialog.
   card.button_action = {
     ...card.button_action,
@@ -227,14 +230,30 @@ function buildClimateTable(rooms, dict, ctx) {
 }
 
 function lightEntities(mapping, ctx) {
-  const ids = (mapping.global?.lights || []).concat(ctx.rooms.flatMap((room) => room.lights || []));
+  const ids = (mapping.global?.lights || []).concat(
+    ctx.rooms.flatMap((room) => {
+      const list = [...(room.lights || [])];
+      // The wizard edits room.light on its own. Include it when it isn't in
+      // the discovered list (or the list is empty for a hand-added room).
+      if (room.light && !list.includes(room.light)) list.push(room.light);
+      return list;
+    }),
+  );
   return [...new Set(ids.filter(Boolean))];
+}
+
+function lightsGroup(mapping, ctx) {
+  const lights = lightEntities(mapping, ctx);
+  const lamps = lights.filter((id) => !ctx.stateById.get(id)?.attributes?.entity_id);
+  return mapping.global?.groupLight || lamps[0] || lights[0] || "";
 }
 
 function buildLightsPopup(mapping, dict, ctx) {
   const lights = lightEntities(mapping, ctx);
-  const lamps = lights.filter((id) => !ctx.stateById.get(id)?.attributes?.entity_id).slice(0, 12);
-  const group = mapping.global?.groupLight || lamps[0];
+  const group = ctx.groupLight;
+  const lamps = lights
+    .filter((id) => id !== group && !ctx.stateById.get(id)?.attributes?.entity_id)
+    .slice(0, 12);
   if (!group) return null;
 
   let text = readPart("dashboard/lights/pop-up.yaml");
@@ -281,17 +300,19 @@ function buildLightsPopup(mapping, dict, ctx) {
 function buildNavbar(dict, ctx) {
   let card = parse(readPart("dashboard/navigation-bar/card.yaml"));
   delete card.media_player;
-  const group = dict["light.living_room"];
+  const group = ctx.groupLight;
   const allowed = new Set();
   if (ctx.options.lightsPopup && group) allowed.add("#popup_lights");
-  if (ctx.options.menu) allowed.add("#popup_menu");
 
   card.routes = (card.routes || []).filter((route) => {
+    if (route.label === "Menu") return Boolean(ctx.options.menu);
     const path = route.tap_action?.navigation_path;
-    if (!path) return true;
-    if (path.startsWith("#")) return allowed.has(path);
-    return false;
+    // Music, TV and Favorites have no pop-up in v0.1. Keeping them would
+    // leave buttons that do nothing, and routes without a path are the
+    // header-menu toggle that only works with the menu card.
+    return typeof path === "string" && path.startsWith("#") && allowed.has(path);
   });
+  if (!card.routes.length) return null;
 
   const lightsRoute = card.routes.find((route) => route.tap_action?.navigation_path === "#popup_lights");
   if (lightsRoute?.popup && group) {
@@ -314,11 +335,12 @@ function buildMenu(ctx) {
 }
 
 export function buildHelpers(mapping, options) {
+  const rooms = mapping.rooms || [];
   const helpers = [];
-  if (options.climateTable) {
+  if (options.climateTable && rooms.some(roomHasClimate)) {
     helpers.push({ domain: "input_boolean", name: "Climate table", entity: "input_boolean.climate_table" });
   }
-  if (options.allRooms) {
+  if (options.allRooms && rooms.filter(roomHasCards).length > 3) {
     helpers.push({ domain: "input_boolean", name: "All rooms", entity: "input_boolean.all_rooms" });
   }
   return helpers;
@@ -334,34 +356,41 @@ export function buildDashboard(mapping, options, runtime = {}) {
       return this.stateById.get(id)?.attributes?.friendly_name || id;
     },
   };
+  ctx.groupLight = lightsGroup(mapping, ctx);
+  ctx.hasClimate = ctx.rooms.some(roomHasClimate);
   const { dict, rooms } = buildDict(mapping);
 
   const cards = [];
   if (options.greeting) cards.push(buildGreeting(dict, ctx));
   if (options.weather && mapping.global?.weather) cards.push(buildWeather(dict, ctx));
   if (options.rooms && rooms.length) {
-    cards.push(buildRoomsHeader(dict, ctx));
-    rooms.forEach((room, index) => {
-      if (!roomHasCards(room)) return;
-      const card = buildRoomCard(room, dict, ctx);
-      if (options.allRooms && rooms.length > 3 && index >= 3) {
-        card.visibility = [
-          { condition: "state", entity: "input_boolean.all_rooms", state: "on" },
-        ];
+    const visibleRooms = rooms.filter(roomHasCards);
+    if (visibleRooms.length) {
+      cards.push(buildRoomsHeader(dict, ctx));
+      visibleRooms.forEach((room, index) => {
+        const card = buildRoomCard(room, dict, ctx);
+        if (options.allRooms && visibleRooms.length > 3 && index >= 3) {
+          card.visibility = [
+            { condition: "state", entity: "input_boolean.all_rooms", state: "on" },
+          ];
+        }
+        cards.push(card);
+      });
+      if (options.allRooms && visibleRooms.length > 3) {
+        cards.push(mapTree(parse(readPart("dashboard/rooms/all-rooms.yaml")), dict));
       }
-      cards.push(card);
-    });
-    if (options.allRooms && rooms.length > 3) {
-      cards.push(mapTree(parse(readPart("dashboard/rooms/all-rooms.yaml")), dict));
     }
   }
-  if (options.climateTable && rooms.length) cards.push(buildClimateTable(rooms, dict, ctx));
+  if (options.climateTable && ctx.hasClimate) cards.push(buildClimateTable(rooms, dict, ctx));
   if (options.menu) cards.push(buildMenu(ctx));
   if (options.lightsPopup) {
     const popup = buildLightsPopup(mapping, dict, ctx);
     if (popup) cards.push(popup);
   }
-  if (options.navigationBar) cards.push(buildNavbar(dict, ctx));
+  if (options.navigationBar) {
+    const navbar = buildNavbar(dict, ctx);
+    if (navbar) cards.push(navbar);
+  }
 
   const config = {
     title: DASHBOARD_TITLE,
